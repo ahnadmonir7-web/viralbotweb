@@ -132,81 +132,142 @@ window.MW = window.MW || {};
       `;
     }).join('');
 
+    const s = bootstrap.settings || {};
+    const themeMap = {
+      teal: { hex: '#0d9488', textCls: 'text-teal-700' },
+      indigo: { hex: '#4f46e5', textCls: 'text-indigo-700' },
+      violet: { hex: '#7c3aed', textCls: 'text-violet-700' },
+      emerald: { hex: '#059669', textCls: 'text-emerald-700' },
+      rose: { hex: '#e11d48', textCls: 'text-rose-700' },
+      amber: { hex: '#d97706', textCls: 'text-amber-700' },
+      sky: { hex: '#0284c7', textCls: 'text-sky-700' },
+    };
+    const ac = themeMap[s.accentTheme || 'teal'] || themeMap.teal;
+    const logoSafe = MW.safeUrl(s.logoUrl);
+    const heroImgSafe = MW.safeUrl(s.heroImageUrl) || '/assets/images/hero_workspace.jpg';
+    const headerPages = (bootstrap.pages || []).filter(function (p) { return p.published && p.showInHeader; });
+    const footerPages = (bootstrap.pages || []).filter(function (p) { return p.published && p.showInFooter; });
+    const visiblePosts = (bootstrap.blogPosts || []).filter(function (p) { return p.published; });
+
+    const blogHtml = visiblePosts.map(function (p) {
+      const cov = MW.safeUrl(p.coverImageUrl) || '/assets/images/category_social.jpg';
+      return `
+        <div class="col-md-4">
+          <div class="mw-card overflow-hidden h-100 d-flex flex-column justify-content-between">
+            <div>
+              <img src="${cov}" alt="${MW.esc(p.title)}" class="w-100 object-fit-cover" style="height:185px;" />
+              <div class="p-4">
+                <div class="small text-secondary mb-1">
+                  <span class="fw-semibold" style="color:${ac.hex};">${MW.esc(p.category)}</span>
+                  <span> · ${new Date(p.createdAt).toLocaleDateString()}</span>
+                  ${p.featured ? '<span class="text-warning fw-bold"> · Featured</span>' : ''}
+                </div>
+                <h3 class="h6 fw-bold text-slate-900 mb-2">${MW.esc(p.title)}</h3>
+                <p class="small text-secondary mb-0">${MW.esc(p.excerpt)}</p>
+              </div>
+            </div>
+            <div class="px-4 pb-3 pt-2 border-top d-flex justify-content-between align-items-center small">
+              <span class="text-secondary">By ${MW.esc(p.authorName)}</span>
+              <button type="button" data-open-post="${p.id}" class="btn btn-link btn-sm p-0 fw-bold text-decoration-none" style="color:${ac.hex};">
+                Read Guide <i class="bi bi-arrow-right"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
     mount.innerHTML = `
       <!-- Top Bar -->
       <nav class="navbar navbar-expand-lg sticky-top bg-white border-bottom py-3">
         <div class="container">
-          <a class="navbar-brand font-display fw-bolder text-indigo-700 fs-4" href="#top">${MW.esc(bootstrap.settings.siteName)}</a>
+          <a class="navbar-brand font-display fw-bolder d-flex align-items-center gap-2 fs-4" style="color:${ac.hex};" href="#top">
+            ${logoSafe
+              ? `<img src="${logoSafe}" alt="${MW.esc(s.siteName)}" class="rounded-3 object-fit-cover border" style="width:36px;height:36px;" />`
+              : `<span class="d-inline-flex align-items-center justify-content-center rounded-3 text-white" style="width:36px;height:36px;background:${ac.hex};"><i class="bi bi-lightning-charge-fill"></i></span>`}
+            <span>${MW.esc(s.siteName)}</span>
+          </a>
           <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav">
             <span class="navbar-toggler-icon"></span>
           </button>
           <div class="collapse navbar-collapse" id="mainNav">
             <ul class="navbar-nav mx-auto gap-lg-3 fw-medium small">
-              <li class="nav-item"><a class="nav-link" href="#jobs">Browse Jobs</a></li>
-              <li class="nav-item"><a class="nav-link" href="#categories">Categories</a></li>
-              <li class="nav-item"><a class="nav-link" href="#how-it-works">How It Works</a></li>
-              <li class="nav-item"><a class="nav-link" href="#payments">Payments</a></li>
-              <li class="nav-item"><button type="button" id="nav-post-job" class="nav-link btn btn-link text-decoration-none">Post a Job</button></li>
+              <li class="nav-item"><a class="nav-link text-nowrap" href="#jobs">Browse Jobs</a></li>
+              <li class="nav-item"><a class="nav-link text-nowrap" href="#categories">Categories</a></li>
+              ${s.showBlogSection && visiblePosts.length > 0
+                ? `<li class="nav-item"><a class="nav-link text-nowrap" href="#blog">Blog</a></li>`
+                : `<li class="nav-item"><a class="nav-link text-nowrap" href="#payments">Payments</a></li>`}
+              ${headerPages.slice(0, 2).map(function (pg) {
+                return `<li class="nav-item"><button type="button" data-open-page="${pg.id}" class="nav-link btn btn-link text-decoration-none text-nowrap">${MW.esc(pg.title)}</button></li>`;
+              }).join('')}
+              <li class="nav-item"><button type="button" id="nav-post-job" class="nav-link btn btn-link text-decoration-none text-nowrap">Post a Job</button></li>
             </ul>
             <div class="d-flex align-items-center gap-2">
               ${currentUser
-                ? `<button type="button" id="nav-go-dash" class="btn btn-primary fw-semibold px-4">${currentUser.role === 'admin' ? 'Admin Console' : 'My Dashboard'}</button>`
-                : `<button type="button" id="nav-signin" class="btn btn-primary fw-semibold px-4">Sign In</button>`}
+                ? `<button type="button" id="nav-go-dash" class="btn fw-semibold px-4 text-white text-nowrap" style="background:${ac.hex};">${currentUser.role === 'admin' ? 'Admin Console' : 'My Dashboard'}</button>`
+                : `<button type="button" id="nav-signin" class="btn fw-semibold px-4 text-white text-nowrap" style="background:${ac.hex};">Sign In</button>`}
             </div>
           </div>
         </div>
       </nav>
 
+      ${s.maintenanceMode ? `
+        <div class="bg-warning-subtle border-bottom border-warning text-center py-2 px-3 small fw-semibold text-dark">
+          <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i> ${MW.esc(s.maintenanceMessage || 'Scheduled maintenance is active.')}
+        </div>
+      ` : ''}
+
       <!-- Hero Section -->
-      <section id="top" class="border-bottom" style="background: linear-gradient(135deg, #eef2ff 0%, #ffffff 55%, #fff7ed 100%);">
+      <section id="top" class="border-bottom" style="background: linear-gradient(135deg, #f0fdfa 0%, #ffffff 55%, #fff7ed 100%);">
         <div class="container py-5">
           <div class="row g-5 align-items-stretch">
             <div class="col-lg-6 d-flex flex-column justify-content-center">
-              <p class="small fw-bold text-indigo-600 mb-2">Human-Verified Micro-Jobs · Instant Proofs · Multi-Gateway Payouts</p>
-              <h1 class="display-5 fw-bolder text-slate-900 lh-sm mb-3">Complete small digital tasks daily or launch real-human campaigns.</h1>
-              <p class="lead fs-6 text-secondary mb-4">Workers earn steady payouts for social engagement, app testing, and web research. Employers pay only for approved proofs—never bots.</p>
+              <p class="small fw-bold mb-2" style="color:${ac.hex};">${MW.esc(s.heroKicker || 'Human-Verified Micro-Jobs · Instant Proofs · Multi-Gateway Payouts')}</p>
+              <h1 class="display-5 fw-bolder text-slate-900 lh-sm mb-3">${MW.esc(s.heroTitle || 'Complete small digital tasks daily or launch real-human campaigns.')}</h1>
+              <p class="lead fs-6 text-secondary mb-4">${MW.esc(s.heroSubtitle || 'Workers earn steady payouts for social engagement, app testing, and web research. Employers pay only for approved proofs—never bots.')}</p>
               <div class="d-flex flex-wrap gap-3">
-                <button type="button" id="hero-start-btn" class="btn btn-primary btn-lg fw-bold px-4 fs-6">
-                  Start Earning Free <i class="bi bi-arrow-right ms-1"></i>
+                <button type="button" id="hero-start-btn" class="btn btn-lg fw-bold px-4 fs-6 text-white" style="background:${ac.hex};">
+                  ${MW.esc(s.heroPrimaryCta || 'Start Earning Free')} <i class="bi bi-arrow-right ms-1"></i>
                 </button>
-                <a href="#jobs" class="btn btn-outline-secondary btn-lg fw-semibold px-4 fs-6 bg-white">Explore Live Tasks</a>
+                <a href="#jobs" class="btn btn-outline-secondary btn-lg fw-semibold px-4 fs-6 bg-white">${MW.esc(s.heroSecondaryCta || 'Explore Live Tasks')}</a>
               </div>
             </div>
             <div class="col-lg-6">
               <div class="position-relative h-100 rounded-4 overflow-hidden shadow-lg border" style="min-height:300px;">
-                <img src="/assets/images/hero_workspace.jpg" alt="Freelancer workspace" class="w-100 h-100 object-fit-cover" />
+                <img src="${heroImgSafe}" alt="Freelancer workspace" class="w-100 h-100 object-fit-cover" />
                 <div class="position-absolute bottom-0 start-0 end-0 m-3 rounded-3 bg-white bg-opacity-95 p-3 d-flex justify-content-between align-items-center shadow-sm small">
-                  <span class="fw-medium text-dark">Fast bKash, Nagad, Binance USDT &amp; PayPal payouts</span>
-                  <span class="font-mono fw-bold text-success">${bootstrap.settings.referralCommissionPercent}% Referral Bonus</span>
+                  <span class="fw-medium text-dark">${MW.esc(s.tagline || 'Fast bKash, Nagad, Binance USDT & PayPal payouts')}</span>
+                  <span class="font-mono fw-bold text-success">${s.referralCommissionPercent}% Referral Bonus</span>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- 4-Column Stats Bar -->
-        <div class="bg-white border-top">
-          <div class="container">
-            <div class="row text-start">
-              <div class="col-6 col-md-3 py-3 border-end">
-                <div class="small text-secondary">Active Campaigns</div>
-                <div class="font-mono fs-4 fw-bold text-indigo-600">${bootstrap.stats.activeJobsCount}</div>
-              </div>
-              <div class="col-6 col-md-3 py-3 border-end">
-                <div class="small text-secondary">Registered Members</div>
-                <div class="font-mono fs-4 fw-bold text-success">${bootstrap.stats.totalWorkersCount + 1420}</div>
-              </div>
-              <div class="col-6 col-md-3 py-3 border-end">
-                <div class="small text-secondary">Verified Tasks Paid</div>
-                <div class="font-mono fs-4 fw-bold text-warning">${bootstrap.stats.totalTasksPaid + 8640}</div>
-              </div>
-              <div class="col-6 col-md-3 py-3">
-                <div class="small text-secondary">Minimum Campaign Cost</div>
-                <div class="font-mono fs-4 fw-bold text-danger">${sym}0.30</div>
+        ${s.showStatsStrip !== false ? `
+          <div class="bg-white border-top">
+            <div class="container">
+              <div class="row text-start">
+                <div class="col-6 col-md-3 py-3 border-end">
+                  <div class="small text-secondary">Active Campaigns</div>
+                  <div class="font-mono fs-4 fw-bold" style="color:${ac.hex};">${bootstrap.stats.activeJobsCount}</div>
+                </div>
+                <div class="col-6 col-md-3 py-3 border-end">
+                  <div class="small text-secondary">Registered Members</div>
+                  <div class="font-mono fs-4 fw-bold text-success">${bootstrap.stats.totalWorkersCount + 1420}</div>
+                </div>
+                <div class="col-6 col-md-3 py-3 border-end">
+                  <div class="small text-secondary">Verified Tasks Paid</div>
+                  <div class="font-mono fs-4 fw-bold text-warning">${bootstrap.stats.totalTasksPaid + 8640}</div>
+                </div>
+                <div class="col-6 col-md-3 py-3">
+                  <div class="small text-secondary">Minimum Withdraw</div>
+                  <div class="font-mono fs-4 fw-bold text-danger">${MW.money(s.minWithdrawAmount || 2, sym)}</div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        ` : ''}
       </section>
 
       <!-- Categories -->
@@ -247,60 +308,73 @@ window.MW = window.MW || {};
         </div>
       </section>
 
-      <!-- How It Works -->
-      <section id="how-it-works" class="container py-5">
-        <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
-          <div>
-            <h2 class="h3 fw-bold mb-1">How ${MW.esc(bootstrap.settings.siteName)} Works</h2>
-            <p class="small text-secondary mb-0">One unified account lets you earn as a worker and launch campaigns as an employer.</p>
+      ${s.showHowItWorks !== false ? `
+        <section id="how-it-works" class="container py-5">
+          <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+            <div>
+              <h2 class="h3 fw-bold mb-1">How ${MW.esc(s.siteName)} Works</h2>
+              <p class="small text-secondary mb-0">One unified account lets you earn as a worker and launch campaigns as an employer.</p>
+            </div>
+            <div class="btn-group bg-light p-1 rounded-3">
+              <button type="button" data-how-mode="worker" class="btn btn-sm fw-bold ${state.howMode === 'worker' ? 'btn-primary' : 'btn-light'}">For Workers</button>
+              <button type="button" data-how-mode="employer" class="btn btn-sm fw-bold ${state.howMode === 'employer' ? 'btn-warning text-white' : 'btn-light'}">For Employers</button>
+            </div>
           </div>
-          <div class="btn-group bg-light p-1 rounded-3">
-            <button type="button" data-how-mode="worker" class="btn btn-sm fw-bold ${state.howMode === 'worker' ? 'btn-primary' : 'btn-light'}">For Workers</button>
-            <button type="button" data-how-mode="employer" class="btn btn-sm fw-bold ${state.howMode === 'employer' ? 'btn-warning text-white' : 'btn-light'}">For Employers</button>
-          </div>
-        </div>
 
-        <div class="row g-4">
-          <div class="col-lg-5 d-flex flex-column gap-3">
-            ${howSteps.map(function (s) {
-              return `
-                <div class="mw-card p-4 d-flex gap-3">
-                  <div class="${s.cls} rounded-3 d-flex align-items-center justify-content-center font-mono fw-bold flex-shrink-0" style="width:42px;height:42px;">${s.num}</div>
-                  <div>
-                    <h3 class="h6 fw-bold mb-1">${s.title}</h3>
-                    <p class="small text-secondary mb-0">${s.desc}</p>
+          <div class="row g-4">
+            <div class="col-lg-5 d-flex flex-column gap-3">
+              ${howSteps.map(function (st) {
+                return `
+                  <div class="mw-card p-4 d-flex gap-3">
+                    <div class="${st.cls} rounded-3 d-flex align-items-center justify-content-center font-mono fw-bold flex-shrink-0" style="width:42px;height:42px;">${st.num}</div>
+                    <div>
+                      <h3 class="h6 fw-bold mb-1">${st.title}</h3>
+                      <p class="small text-secondary mb-0">${st.desc}</p>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+            <div class="col-lg-7">
+              <div class="row g-3 h-100">
+                <div class="col-sm-6">
+                  <div class="mw-card overflow-hidden h-100">
+                    <img src="/assets/images/category_social.jpg" alt="Social media engagement" class="w-100 object-fit-cover" style="height:190px;" />
+                    <div class="p-4">
+                      <h3 class="h6 fw-bold mb-1">Organic Social &amp; Video</h3>
+                      <p class="small text-secondary mb-0">Real members watch videos, follow pages, and write authentic comments with proof.</p>
+                    </div>
                   </div>
                 </div>
-              `;
-            }).join('')}
-          </div>
-          <div class="col-lg-7">
-            <div class="row g-3 h-100">
-              <div class="col-sm-6">
-                <div class="mw-card overflow-hidden h-100">
-                  <img src="/assets/images/category_social.jpg" alt="Social media engagement" class="w-100 object-fit-cover" style="height:190px;" />
-                  <div class="p-4">
-                    <h3 class="h6 fw-bold mb-1">Organic Social &amp; Video</h3>
-                    <p class="small text-secondary mb-0">Real members watch videos, follow pages, and write authentic comments with proof.</p>
-                  </div>
-                </div>
-              </div>
-              <div class="col-sm-6">
-                <div class="mw-card overflow-hidden h-100">
-                  <img src="/assets/images/category_apps.jpg" alt="App testing tasks" class="w-100 object-fit-cover" style="height:190px;" />
-                  <div class="p-4">
-                    <h3 class="h6 fw-bold mb-1">App Testing &amp; UX Research</h3>
-                    <p class="small text-secondary mb-0">Gather real device screenshots, onboarding feedback, and survey responses.</p>
+                <div class="col-sm-6">
+                  <div class="mw-card overflow-hidden h-100">
+                    <img src="/assets/images/category_apps.jpg" alt="App testing tasks" class="w-100 object-fit-cover" style="height:190px;" />
+                    <div class="p-4">
+                      <h3 class="h6 fw-bold mb-1">App Testing &amp; UX Research</h3>
+                      <p class="small text-secondary mb-0">Gather real device screenshots, onboarding feedback, and survey responses.</p>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ` : ''}
+
+      ${s.showBlogSection !== false && visiblePosts.length > 0 ? `
+        <section id="blog" class="bg-white border-top py-5">
+          <div class="container">
+            <div class="mb-4">
+              <h2 class="h3 fw-bold mb-1">Guides &amp; Platform Updates</h2>
+              <p class="small text-secondary mb-0">Tips for maximizing daily task payouts and running high-conversion campaigns.</p>
+            </div>
+            <div class="row g-4">${blogHtml}</div>
+          </div>
+        </section>
+      ` : ''}
 
       <!-- Gateways & Trust -->
-      <section id="payments" class="py-5 text-white" style="background: linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%);">
+      <section id="payments" class="py-5 text-white" style="background: linear-gradient(135deg, #0f172a 0%, #134e4a 55%, #0f172a 100%);">
         <div class="container">
           <div class="row g-4 align-items-center">
             <div class="col-lg-7">
@@ -313,11 +387,11 @@ window.MW = window.MW || {};
                 <div class="d-flex align-items-center gap-3 mb-3">
                   <img src="/assets/images/avatar_founder.jpg" alt="Operations Lead" class="rounded-circle object-fit-cover" style="width:54px;height:54px;" />
                   <div>
-                    <div class="fw-bold">Tariq Ahmed</div>
-                    <div class="small text-white-50">Marketplace Operations · Dhaka &amp; Global</div>
+                    <div class="fw-bold">${MW.esc(s.founderName || 'Tariq Ahmed')}</div>
+                    <div class="small text-white-50">${MW.esc(s.founderRole || 'Marketplace Operations · Dhaka & Global')}</div>
                   </div>
                 </div>
-                <p class="small text-white-75 mb-4">“Every campaign budget is held safely until employers review worker screenshots, and our support team resolves disputes within 24 hours.”</p>
+                <p class="small text-white-75 mb-4">“${MW.esc(s.founderQuote || 'Every campaign budget is held safely until employers review worker screenshots, and our support team resolves disputes within 24 hours.')}”</p>
                 <button type="button" id="footer-cta-btn" class="btn btn-success fw-bold px-4">Create Free Account</button>
               </div>
             </div>
@@ -327,10 +401,13 @@ window.MW = window.MW || {};
 
       <footer class="bg-white border-top py-4">
         <div class="container d-flex flex-column flex-sm-row justify-content-between align-items-center gap-3 small text-secondary">
-          <div><strong class="text-dark">${MW.esc(bootstrap.settings.siteName)}</strong> · © ${new Date().getFullYear()} All rights reserved.</div>
-          <div class="d-flex align-items-center gap-4">
-            <button type="button" id="footer-admin-btn" class="btn btn-link btn-sm p-0 text-decoration-none">Admin Login</button>
-            <span>Support: ${MW.esc(bootstrap.settings.supportEmail)}</span>
+          <div><strong class="text-dark">${MW.esc(s.siteName)}</strong> · ${MW.esc(s.footerText || ('© ' + new Date().getFullYear() + ' All rights reserved.'))}</div>
+          <div class="d-flex flex-wrap align-items-center gap-4">
+            ${footerPages.map(function (pg) {
+              return `<button type="button" data-open-page="${pg.id}" class="btn btn-link btn-sm p-0 text-secondary text-decoration-none">${MW.esc(pg.title)}</button>`;
+            }).join('')}
+            <button type="button" id="footer-admin-btn" class="btn btn-link btn-sm p-0 text-decoration-none fw-semibold" style="color:${ac.hex};">Admin Login</button>
+            <span>Support: ${MW.esc(s.supportEmail)}</span>
           </div>
         </div>
       </footer>
@@ -363,6 +440,39 @@ window.MW = window.MW || {};
 
     const adminBtn = document.getElementById('footer-admin-btn');
     if (adminBtn) adminBtn.onclick = function () { MW.openAuthModal('admin'); };
+
+    mount.querySelectorAll('[data-open-post]').forEach(function (btn) {
+      btn.onclick = function () {
+        const pid = Number(btn.getAttribute('data-open-post'));
+        const post = visiblePosts.find(function (x) { return Number(x.id) === pid; });
+        if (!post) return;
+        const cov = MW.safeUrl(post.coverImageUrl);
+        const covEl = document.getElementById('cms-cover');
+        if (cov) {
+          covEl.src = cov;
+          covEl.classList.remove('d-none');
+        } else {
+          covEl.classList.add('d-none');
+        }
+        document.getElementById('cms-meta').textContent = `${post.category} · By ${post.authorName} · ${new Date(post.createdAt).toLocaleDateString()}`;
+        document.getElementById('cms-title').textContent = post.title;
+        document.getElementById('cms-body').textContent = post.content;
+        bootstrapModal(document.getElementById('cmsReaderModal')).show();
+      };
+    });
+
+    mount.querySelectorAll('[data-open-page]').forEach(function (btn) {
+      btn.onclick = function () {
+        const pgId = Number(btn.getAttribute('data-open-page'));
+        const page = (bootstrap.pages || []).find(function (x) { return Number(x.id) === pgId; });
+        if (!page) return;
+        document.getElementById('cms-cover').classList.add('d-none');
+        document.getElementById('cms-meta').textContent = '/' + page.slug;
+        document.getElementById('cms-title').textContent = page.title;
+        document.getElementById('cms-body').textContent = page.content;
+        bootstrapModal(document.getElementById('cmsReaderModal')).show();
+      };
+    });
 
     const searchInput = document.getElementById('mp-search');
     if (searchInput) {
@@ -526,40 +636,58 @@ window.MW = window.MW || {};
     let adminStatus = { claimed: true, hasEnvPasscode: false };
 
     function syncAuthTabUI() {
-      const showName = currentAuthTab === 'register' || (currentAuthTab === 'admin' && !adminStatus.claimed && !adminStatus.hasEnvPasscode);
+      const bootstrap = MW.getBootstrap();
+      const siteName = (bootstrap && bootstrap.settings && bootstrap.settings.siteName) || 'MiniWorkers';
+      const isLogin = currentAuthTab === 'login';
       const isRegister = currentAuthTab === 'register';
       const isAdmin = currentAuthTab === 'admin';
 
-      document.getElementById('auth-name-wrap').classList.toggle('d-none', !showName);
-      document.getElementById('auth-name').placeholder = isAdmin ? 'Admin Name' : 'User Name';
-      document.getElementById('auth-phone-wrap').classList.toggle('d-none', isAdmin);
-      document.getElementById('auth-phone').required = !isAdmin;
-      document.getElementById('auth-phone').placeholder = isRegister ? 'Phone Number' : 'Phone Number or Email';
+      const brandEl = document.getElementById('auth-brand-title');
+      if (brandEl) brandEl.textContent = siteName;
 
-      const showAdminEmail = isAdmin && !adminStatus.hasEnvPasscode;
-      document.getElementById('auth-email-wrap').classList.toggle('d-none', !showAdminEmail);
-      document.getElementById('auth-email').required = showAdminEmail;
+      document.getElementById('auth-tabs-bar').classList.toggle('d-none', isAdmin);
+      document.getElementById('auth-admin-header').classList.toggle('d-none', !isAdmin);
 
+      const tabLoginBtn = document.getElementById('auth-tab-login');
+      const tabRegBtn = document.getElementById('auth-tab-register');
+      if (tabLoginBtn && tabRegBtn) {
+        tabLoginBtn.className = 'btn btn-sm fw-bold ' + (isLogin ? 'bg-white shadow-xs text-teal-700' : 'text-secondary');
+        tabRegBtn.className = 'btn btn-sm fw-bold ' + (isRegister ? 'bg-white shadow-xs text-teal-700' : 'text-secondary');
+      }
+
+      document.getElementById('auth-login-fields').classList.toggle('d-none', !isLogin);
+      document.getElementById('auth-register-fields').classList.toggle('d-none', !isRegister);
+      document.getElementById('auth-admin-fields').classList.toggle('d-none', !isAdmin);
+      document.getElementById('auth-admin-name-wrap').classList.toggle('d-none', !(isAdmin && !adminStatus.claimed && !adminStatus.hasEnvPasscode));
+      document.getElementById('auth-email-wrap').classList.toggle('d-none', !(isAdmin && !adminStatus.hasEnvPasscode));
+      document.getElementById('auth-confirm-wrap').classList.toggle('d-none', !isRegister);
+      document.getElementById('auth-pass-col').className = isRegister ? 'col-sm-6' : 'col-12';
       document.getElementById('auth-reg-extra').classList.toggle('d-none', !isRegister);
-      document.getElementById('auth-demo-wrap').classList.toggle('d-none', currentAuthTab !== 'login');
+      document.getElementById('auth-demo-wrap').classList.toggle('d-none', !isLogin);
       document.getElementById('auth-admin-hint').classList.toggle('d-none', !(isAdmin && !adminStatus.claimed && !adminStatus.hasEnvPasscode));
-      document.getElementById('auth-pass').placeholder = (isAdmin && adminStatus.hasEnvPasscode) ? 'Admin Passcode' : 'Password';
 
-      const badgeLabel = document.getElementById('auth-mode-label');
-      if (badgeLabel) {
-        badgeLabel.textContent = isRegister ? 'Registration' : isAdmin ? 'Admin Panel' : 'Member Login';
+      document.getElementById('auth-identifier').required = isLogin;
+      document.getElementById('auth-name').required = isRegister;
+      document.getElementById('auth-username').required = isRegister;
+      document.getElementById('auth-reg-email').required = isRegister;
+      document.getElementById('auth-pass-confirm').required = isRegister;
+      document.getElementById('auth-email').required = isAdmin && !adminStatus.hasEnvPasscode;
+
+      const passLabel = document.getElementById('auth-pass-label');
+      if (passLabel) {
+        passLabel.textContent = (isAdmin && adminStatus.hasEnvPasscode) ? 'Admin Passcode' : 'Password';
       }
 
       const btn = document.getElementById('auth-submit-btn');
-      btn.innerHTML = (isRegister
-        ? 'Register'
-        : currentAuthTab === 'login'
-          ? 'Login'
-          : (!adminStatus.claimed && !adminStatus.hasEnvPasscode ? 'Claim & Open Admin' : 'Admin Sign In')) + ' <i class="bi bi-chevron-right ms-1"></i>';
+      btn.textContent = isRegister
+        ? 'Create Free Account'
+        : isLogin
+          ? 'Sign In to Workspace'
+          : (!adminStatus.claimed && !adminStatus.hasEnvPasscode ? 'Claim & Open Admin' : 'Admin Sign In');
 
-      document.getElementById('auth-switch-prefix').textContent = isRegister ? 'Already have an account?' : "Don't have an account?";
-      document.getElementById('auth-switch-btn').textContent = isRegister ? 'Login' : 'Register';
-      document.getElementById('auth-admin-toggle').textContent = isAdmin ? 'Back to Member Login' : 'Admin Panel Login';
+      document.getElementById('auth-switch-prefix').textContent = isRegister ? 'Already registered?' : ('New to ' + siteName + '?');
+      document.getElementById('auth-switch-btn').textContent = isRegister ? 'Sign In Here' : 'Register Free';
+      document.getElementById('auth-admin-toggle').classList.toggle('d-none', isAdmin);
     }
 
     MW.openAuthModal = async function (tab) {
@@ -571,6 +699,13 @@ window.MW = window.MW || {};
       syncAuthTabUI();
       bootstrapModal(document.getElementById('authModal')).show();
     };
+
+    const tabLoginBtn = document.getElementById('auth-tab-login');
+    if (tabLoginBtn) tabLoginBtn.onclick = function () { currentAuthTab = 'login'; document.getElementById('auth-error').classList.add('d-none'); syncAuthTabUI(); };
+    const tabRegBtn = document.getElementById('auth-tab-register');
+    if (tabRegBtn) tabRegBtn.onclick = function () { currentAuthTab = 'register'; document.getElementById('auth-error').classList.add('d-none'); syncAuthTabUI(); };
+    const backMemberBtn = document.getElementById('auth-back-member');
+    if (backMemberBtn) backMemberBtn.onclick = function () { currentAuthTab = 'login'; document.getElementById('auth-error').classList.add('d-none'); syncAuthTabUI(); };
 
     const passToggle = document.getElementById('auth-pass-toggle');
     if (passToggle) {
@@ -594,7 +729,7 @@ window.MW = window.MW || {};
     const adminToggle = document.getElementById('auth-admin-toggle');
     if (adminToggle) {
       adminToggle.onclick = function () {
-        currentAuthTab = currentAuthTab === 'admin' ? 'login' : 'admin';
+        currentAuthTab = 'admin';
         document.getElementById('auth-error').classList.add('d-none');
         syncAuthTabUI();
       };
@@ -603,7 +738,7 @@ window.MW = window.MW || {};
     const demoBtn = document.getElementById('auth-demo-btn');
     if (demoBtn) {
       demoBtn.onclick = function () {
-        document.getElementById('auth-phone').value = '01711000001';
+        document.getElementById('auth-identifier').value = 'arif@demo.com';
         document.getElementById('auth-pass').value = 'worker123';
       };
     }
@@ -614,34 +749,43 @@ window.MW = window.MW || {};
         e.preventDefault();
         const errBox = document.getElementById('auth-error');
         errBox.classList.add('d-none');
-        const phone = document.getElementById('auth-phone').value;
-        const email = document.getElementById('auth-email').value;
         const password = document.getElementById('auth-pass').value;
-        const name = document.getElementById('auth-name').value;
 
         try {
           let res;
           if (currentAuthTab === 'login') {
+            const identifier = document.getElementById('auth-identifier').value;
             res = await MW.api('/auth/login', {
               method: 'POST',
-              body: JSON.stringify({ phone: phone, identifier: phone, password: password }),
+              body: JSON.stringify({ identifier: identifier, email: identifier, phone: identifier, password: password }),
             });
           } else if (currentAuthTab === 'register') {
+            const confirmPass = document.getElementById('auth-pass-confirm').value;
+            if (password !== confirmPass) {
+              throw new Error('Passwords do not match.');
+            }
+            if (!document.getElementById('auth-terms').checked) {
+              throw new Error('Please agree to the Marketplace Terms & Fair-Use Rules.');
+            }
             res = await MW.api('/auth/register', {
               method: 'POST',
               body: JSON.stringify({
-                username: name,
-                name: name,
-                phone: phone,
+                name: document.getElementById('auth-name').value,
+                username: document.getElementById('auth-username').value,
+                email: document.getElementById('auth-reg-email').value,
+                country: document.getElementById('auth-country').value,
+                phone: document.getElementById('auth-phone').value,
                 password: password,
                 referralCode: document.getElementById('auth-ref').value,
               }),
             });
           } else {
+            const email = document.getElementById('auth-email').value;
+            const adminName = document.getElementById('auth-admin-name').value;
             if (!adminStatus.claimed || adminStatus.hasEnvPasscode) {
               res = await MW.api('/auth/claim-admin', {
                 method: 'POST',
-                body: JSON.stringify({ name: name || 'Platform Admin', email: email || 'admin@viralbolt.local', password: password }),
+                body: JSON.stringify({ name: adminName || 'Platform Admin', email: email || 'admin@miniworkers.local', password: password }),
               });
             } else {
               res = await MW.api('/auth/login', {

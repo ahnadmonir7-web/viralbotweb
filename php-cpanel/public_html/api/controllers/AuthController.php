@@ -1,17 +1,76 @@
 <?php
 declare(strict_types=1);
 
+function sanitizeUrlSafe(?string $url): string {
+    $s = trim((string)($url ?? ''));
+    if ($s === '') return '';
+    if (str_starts_with($s, '/') && !str_starts_with($s, '//')) return $s;
+    if (preg_match('#^https?://#i', $s)) return $s;
+    return '';
+}
+
 function getSettingsRow(PDO $pdo): array {
-    $row = $pdo->query('SELECT * FROM settings WHERE id = 1')->fetch();
+    $row = $pdo->query('SELECT * FROM settings WHERE id = 1')->fetch() ?: [];
     return [
-        'siteName' => $row['site_name'],
-        'currencySymbol' => $row['currency_symbol'],
-        'platformFeePercent' => (float)$row['platform_fee_percent'],
-        'referralCommissionPercent' => (float)$row['referral_commission_percent'],
-        'minJobWorkers' => (int)$row['min_job_workers'],
-        'autoApproveJobs' => (bool)$row['auto_approve_jobs'],
-        'noticeBanner' => $row['notice_banner'],
-        'supportEmail' => $row['support_email'],
+        'siteName' => $row['site_name'] ?? 'MiniWorkers',
+        'tagline' => $row['tagline'] ?? 'Human-Verified Micro-Jobs · Fast Multi-Gateway Payouts',
+        'logoUrl' => $row['logo_url'] ?? '',
+        'accentTheme' => $row['accent_theme'] ?? 'teal',
+        'currencySymbol' => $row['currency_symbol'] ?? '$',
+        'platformFeePercent' => (float)($row['platform_fee_percent'] ?? 5),
+        'referralCommissionPercent' => (float)($row['referral_commission_percent'] ?? 5),
+        'minJobWorkers' => (int)($row['min_job_workers'] ?? 10),
+        'minWithdrawAmount' => (float)($row['min_withdraw_amount'] ?? 2),
+        'autoApproveJobs' => (bool)($row['auto_approve_jobs'] ?? false),
+        'allowRegistration' => array_key_exists('allow_registration', $row) ? (bool)$row['allow_registration'] : true,
+        'maintenanceMode' => (bool)($row['maintenance_mode'] ?? false),
+        'maintenanceMessage' => $row['maintenance_message'] ?? 'Platform maintenance is underway. Submissions will resume shortly.',
+        'noticeBanner' => $row['notice_banner'] ?? '',
+        'supportEmail' => $row['support_email'] ?? 'support@miniworkers.example',
+        'heroKicker' => $row['hero_kicker'] ?? 'Human-Verified Micro-Jobs · Instant Task Proofs · Multi-Gateway Payouts',
+        'heroTitle' => $row['hero_title'] ?? 'Complete small digital tasks daily or launch real-human campaigns.',
+        'heroSubtitle' => $row['hero_subtitle'] ?? 'Workers earn steady payouts for social engagement, app testing, and web research. Employers pay only for approved proofs—never bots.',
+        'heroPrimaryCta' => $row['hero_primary_cta'] ?? 'Start Earning Free',
+        'heroSecondaryCta' => $row['hero_secondary_cta'] ?? 'Explore Live Tasks',
+        'heroImageUrl' => $row['hero_image_url'] ?? '/assets/images/hero_workspace.jpg',
+        'showStatsStrip' => array_key_exists('show_stats_strip', $row) ? (bool)$row['show_stats_strip'] : true,
+        'showHowItWorks' => array_key_exists('show_how_it_works', $row) ? (bool)$row['show_how_it_works'] : true,
+        'showBlogSection' => array_key_exists('show_blog_section', $row) ? (bool)$row['show_blog_section'] : true,
+        'founderName' => $row['founder_name'] ?? 'Tariq Ahmed',
+        'founderRole' => $row['founder_role'] ?? 'Marketplace Operations · Dhaka & Global',
+        'founderQuote' => $row['founder_quote'] ?? 'Every campaign budget is held safely until employers review worker screenshots, and our support ticket team resolves any proof dispute within 24 hours.',
+        'footerText' => $row['footer_text'] ?? 'All rights reserved. Built for verified micro-jobs and fast payouts.',
+    ];
+}
+
+function formatBlogPostRow(array $row): array {
+    return [
+        'id' => (int)$row['id'],
+        'title' => $row['title'],
+        'slug' => $row['slug'],
+        'category' => $row['category'],
+        'excerpt' => $row['excerpt'],
+        'content' => $row['content'],
+        'coverImageUrl' => $row['cover_image_url'],
+        'authorName' => $row['author_name'],
+        'featured' => (bool)$row['featured'],
+        'published' => (bool)$row['published'],
+        'createdAt' => $row['created_at'],
+        'updatedAt' => $row['updated_at'],
+    ];
+}
+
+function formatPageRow(array $row): array {
+    return [
+        'id' => (int)$row['id'],
+        'title' => $row['title'],
+        'slug' => $row['slug'],
+        'summary' => $row['summary'],
+        'content' => $row['content'],
+        'showInHeader' => (bool)$row['show_in_header'],
+        'showInFooter' => (bool)$row['show_in_footer'],
+        'published' => (bool)$row['published'],
+        'updatedAt' => $row['updated_at'],
     ];
 }
 
@@ -76,6 +135,9 @@ function handleBootstrap(PDO $pdo): never {
                 ORDER BY j.featured DESC, j.id DESC";
     $jobs = array_map('formatJobRow', $pdo->query($jobsSql)->fetchAll());
 
+    $blogPosts = array_map('formatBlogPostRow', $pdo->query('SELECT * FROM blog_posts WHERE published = 1 ORDER BY featured DESC, id DESC')->fetchAll());
+    $pages = array_map('formatPageRow', $pdo->query('SELECT * FROM pages WHERE published = 1 ORDER BY id ASC')->fetchAll());
+
     $workersCount = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE role = 'user'")->fetchColumn();
     $tasksPaid = (int)$pdo->query("SELECT COALESCE(SUM(tasks_completed), 0) FROM users")->fetchColumn();
     $paidOut = (float)$pdo->query("SELECT COALESCE(SUM(amount), 0) FROM withdrawals WHERE status = 'approved'")->fetchColumn();
@@ -85,6 +147,8 @@ function handleBootstrap(PDO $pdo): never {
         'categories' => $categories,
         'gateways' => $gateways,
         'jobs' => $jobs,
+        'blogPosts' => $blogPosts,
+        'pages' => $pages,
         'stats' => [
             'activeJobsCount' => count($jobs),
             'totalWorkersCount' => $workersCount,
@@ -105,7 +169,7 @@ function handleAuthRoutes(PDO $pdo, string $method, string $path): bool {
 
     if ($method === 'POST' && $path === '/auth/claim-admin') {
         $body = getJsonBody();
-        $email = strtolower(trim((string)($body['email'] ?? 'admin@viralbolt.local')));
+        $email = strtolower(trim((string)($body['email'] ?? 'admin@miniworkers.local')));
         $password = (string)($body['password'] ?? '');
         $name = trim((string)($body['name'] ?? 'Platform Admin'));
 
@@ -141,6 +205,10 @@ function handleAuthRoutes(PDO $pdo, string $method, string $path): bool {
     }
 
     if ($method === 'POST' && $path === '/auth/register') {
+        $settings = getSettingsRow($pdo);
+        if (!$settings['allowRegistration']) {
+            jsonResponse(['error' => 'New registrations are currently paused by site administration.'], 403);
+        }
         $body = getJsonBody();
         $rawUsername = trim((string)($body['username'] ?? $body['name'] ?? ''));
         $name = trim((string)($body['name'] ?? $rawUsername));
@@ -150,30 +218,36 @@ function handleAuthRoutes(PDO $pdo, string $method, string $path): bool {
         $country = trim((string)($body['country'] ?? 'Bangladesh')) ?: 'Bangladesh';
         $refInput = strtoupper(trim((string)($body['referralCode'] ?? '')));
 
-        if (strlen($rawUsername) < 2 || strlen($phone) < 7 || strlen($password) < 6) {
-            jsonResponse(['error' => 'Enter a valid User Name (2+ chars), Phone Number (7+ digits), and 6+ character Password.'], 400);
+        if (strlen($name) < 2 || strlen($rawUsername) < 2 || strlen($password) < 6) {
+            jsonResponse(['error' => 'Enter a valid Full Name, Username (2+ chars), and 6+ character Password.'], 400);
+        }
+
+        if (!filter_var($rawEmail, FILTER_VALIDATE_EMAIL) && strlen($phone) < 7) {
+            jsonResponse(['error' => 'Enter a valid Email Address (or Phone Number).'], 400);
         }
 
         $email = ($rawEmail !== '' && filter_var($rawEmail, FILTER_VALIDATE_EMAIL))
             ? $rawEmail
-            : preg_replace('/\+/', '', $phone) . '@viralbolt.user';
+            : preg_replace('/\+/', '', $phone) . '@miniworkers.user';
 
-        $chkPhone = $pdo->prepare('SELECT id FROM users WHERE phone = ? LIMIT 1');
-        $chkPhone->execute([$phone]);
-        if ($chkPhone->fetch()) {
-            jsonResponse(['error' => 'An account with this Phone Number already exists.'], 409);
+        if ($phone !== '') {
+            $chkPhone = $pdo->prepare('SELECT id FROM users WHERE phone = ? LIMIT 1');
+            $chkPhone->execute([$phone]);
+            if ($chkPhone->fetch()) {
+                jsonResponse(['error' => 'An account with this Phone Number already exists.'], 409);
+            }
         }
 
         $chkUser = $pdo->prepare('SELECT id FROM users WHERE LOWER(username) = ? LIMIT 1');
         $chkUser->execute([strtolower($rawUsername)]);
         if ($chkUser->fetch()) {
-            jsonResponse(['error' => 'This User Name is already taken.'], 409);
+            jsonResponse(['error' => 'This Username is already taken.'], 409);
         }
 
         $chk = $pdo->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
         $chk->execute([$email]);
         if ($chk->fetch()) {
-            jsonResponse(['error' => 'An account with this email already exists.'], 409);
+            jsonResponse(['error' => 'An account with this Email Address already exists.'], 409);
         }
 
         $referredBy = null;
@@ -217,7 +291,7 @@ function handleAuthRoutes(PDO $pdo, string $method, string $path): bool {
         $user = $stmt->fetch();
 
         if (!$user || !password_verify($password, $user['password_hash'])) {
-            jsonResponse(['error' => 'Invalid Phone Number / Email or Password.'], 401);
+            jsonResponse(['error' => 'Invalid Email / Username or Password.'], 401);
         }
         if ($user['status'] === 'banned') {
             jsonResponse(['error' => 'This account has been suspended by administration.'], 403);

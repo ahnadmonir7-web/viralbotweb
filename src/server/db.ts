@@ -2,7 +2,10 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import type {
+  ActivityLog,
+  BlogPost,
   Category,
+  CmsPage,
   DepositRequest,
   Gateway,
   JobProof,
@@ -31,6 +34,9 @@ export interface DatabaseState {
   withdrawals: WithdrawRequest[];
   transactions: WalletTransaction[];
   tickets: SupportTicket[];
+  blogPosts: BlogPost[];
+  pages: CmsPage[];
+  activityLogs: ActivityLog[];
 }
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
@@ -159,7 +165,7 @@ function createInitialState(): DatabaseState {
       name: 'PayPal Instant',
       code: 'paypal',
       type: 'both',
-      accountDetails: 'billing@viralbolt.example',
+      accountDetails: 'billing@miniworkers.example',
       instructions: 'Send as Goods/Services or enter your PayPal email for withdrawals.',
       minAmount: 5,
       maxAmount: 2000,
@@ -492,19 +498,131 @@ function createInitialState(): DatabaseState {
     },
   ];
 
+  const defaultSettings: SiteSettings = {
+    siteName: 'MiniWorkers',
+    tagline: 'Human-Verified Micro-Jobs · Fast Multi-Gateway Payouts',
+    logoUrl: '',
+    accentTheme: 'teal',
+    currencySymbol: '$',
+    platformFeePercent: 5,
+    referralCommissionPercent: 5,
+    minJobWorkers: 10,
+    minWithdrawAmount: 2,
+    autoApproveJobs: false,
+    allowRegistration: true,
+    maintenanceMode: false,
+    maintenanceMessage: 'Scheduled platform optimization is underway. Normal task activity will resume shortly.',
+    noticeBanner:
+      'Welcome to MiniWorkers! Complete verified micro-tasks daily or launch human-powered campaigns with instant proof tracking.',
+    supportEmail: 'support@miniworkers.example',
+    heroKicker: 'Human-Verified Micro-Jobs · Instant Task Proofs · Multi-Gateway Payouts',
+    heroTitle: 'Complete small digital tasks daily or launch real-human campaigns.',
+    heroSubtitle:
+      'Workers earn steady payouts for social engagement, app testing, and web research. Employers pay only for approved proofs—never bots.',
+    heroPrimaryCta: 'Start Earning Free',
+    heroSecondaryCta: 'Explore Live Tasks',
+    heroImageUrl: '/src/assets/images/hero_microjob_workspace_1795645722925.jpg',
+    showStatsStrip: true,
+    showHowItWorks: true,
+    showBlogSection: true,
+    founderName: 'Tariq Ahmed',
+    founderRole: 'Marketplace Operations · Dhaka & Global',
+    founderQuote:
+      'Every campaign budget is held safely until employers review worker screenshots, and our support ticket team resolves any proof dispute within 24 hours.',
+    footerText: 'All rights reserved.',
+  };
+
+  const blogPosts: BlogPost[] = [
+    {
+      id: 901,
+      title: 'How to Submit Clean Task Proofs That Get Approved Fast',
+      slug: 'how-to-submit-clean-task-proofs',
+      category: 'Worker Guide',
+      excerpt: 'Follow three simple screenshot and timestamp habits to keep your approval rate near 100% and unlock faster payouts.',
+      content:
+        'Employers review dozens of worker proofs for every campaign. To get approved on the first check, always read the step-by-step instructions before clicking the external link.\n\nWhen uploading a screenshot, make sure the required username, video watch timestamp, or confirmation banner is clearly visible without heavy cropping. Include your exact profile handle in the text proof box so the employer can match your action in seconds.\n\nAvoid submitting duplicate or blurry images, as rejected tasks do not credit your Earning Balance and lower account trust.',
+      coverImageUrl: '/src/assets/images/category_social_media_1795645722524.jpg',
+      authorName: 'Editorial Team',
+      featured: true,
+      published: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 902,
+      title: 'Launching High-Retention App Testing & Video Campaigns',
+      slug: 'launching-high-retention-campaigns',
+      category: 'Employer Tips',
+      excerpt: 'Structure micro-job instructions clearly so verified community testers deliver actionable feedback and genuine engagement.',
+      content:
+        'Great micro-job campaigns combine clear instructions with realistic verification checks. Start by breaking your task into 3 to 4 numbered steps.\n\nInstead of vague instructions, specify exactly what the worker should share in the proof field—such as a 2-sentence UX observation or a confirmation code from your thank-you screen. Our escrow system holds your campaign budget safely and only releases funds for proofs you approve.',
+      coverImageUrl: '/src/assets/images/category_app_testing_1795645723434.jpg',
+      authorName: 'Tariq Ahmed',
+      featured: false,
+      published: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 903,
+      title: 'Instant bKash, Nagad & Binance USDT Payout Guide 2026',
+      slug: 'instant-payout-guide-2026',
+      category: 'Payments',
+      excerpt: 'Everything you need to know about minimum withdrawal thresholds, gateway fees, and earning-to-deposit wallet transfers.',
+      content:
+        'Once your Earning Balance reaches the minimum threshold configured in our payment gateways, head to Wallet & Payouts inside your dashboard.\n\nChoose bKash, Nagad, Binance Pay / USDT (TRC20), or PayPal, double-check your receiving account number, and submit your request. Want to advertise your own channel or website? Use the instant Transfer tab to move funds from your Earning Balance into your Deposit Balance with zero delay.',
+      coverImageUrl: '/src/assets/images/hero_microjob_workspace_1795645722925.jpg',
+      authorName: 'Finance Desk',
+      featured: false,
+      published: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+
+  const pages: CmsPage[] = [
+    {
+      id: 951,
+      title: 'About Us',
+      slug: 'about',
+      summary: 'Learn how MiniWorkers connects verified human freelancers with digital creators and growing businesses.',
+      content:
+        'MiniWorkers is a human-verified micro-job marketplace built for both everyday earners and campaign advertisers.\n\nWorkers complete straightforward digital assignments—from video feedback and social engagement to app usability checks—and withdraw earnings through trusted local and global payment gateways.\n\nEmployers launch targeted campaigns with full proof inspection before any reward is released.',
+      showInHeader: false,
+      showInFooter: true,
+      published: true,
+      updatedAt: now,
+    },
+    {
+      id: 952,
+      title: 'Terms & Rules',
+      slug: 'terms',
+      summary: 'Fair-use marketplace guidelines protecting workers, employers, and payout integrity.',
+      content:
+        '1. One Verified Account Per User: Creating multiple accounts to abuse referral bonuses or repeat single-slot tasks is prohibited.\n\n2. Honest Proof Submissions: Workers must complete every step before uploading screenshots. Automated scripts or fake proofs lead to rejection or suspension.\n\n3. Fair Employer Review: Employers must approve accurate proofs promptly. Unfair rejections can be disputed via Support Tickets for Admin review.',
+      showInHeader: false,
+      showInFooter: true,
+      published: true,
+      updatedAt: now,
+    },
+    {
+      id: 953,
+      title: 'Payout Policy',
+      slug: 'payout-policy',
+      summary: 'Deposit verification timelines, withdrawal processing windows, and KYC guidelines.',
+      content:
+        'Deposits submitted with a valid Transaction ID (TrxID) or payment hash are verified by our finance administrators and credited directly to your Deposit Balance.\n\nWithdrawals from your Earning Balance are queued via bKash, Nagad, Binance USDT, or PayPal and processed promptly once account details and optional KYC verification are confirmed.',
+      showInHeader: false,
+      showInFooter: true,
+      published: true,
+      updatedAt: now,
+    },
+  ];
+
   return {
     nextId: 1000,
     adminClaimed: false,
-    settings: {
-      siteName: 'Viral Bolt',
-      currencySymbol: '$',
-      platformFeePercent: 5,
-      referralCommissionPercent: 5,
-      minJobWorkers: 10,
-      autoApproveJobs: false,
-      noticeBanner: 'Welcome to Viral Bolt! Complete verified micro-tasks daily or launch human-powered campaigns with instant proof tracking.',
-      supportEmail: 'support@viralbolt.example',
-    },
+    settings: defaultSettings,
     users,
     categories,
     jobs,
@@ -514,6 +632,9 @@ function createInitialState(): DatabaseState {
     withdrawals,
     transactions,
     tickets,
+    blogPosts,
+    pages,
+    activityLogs: [],
   };
 }
 
@@ -536,13 +657,33 @@ export function loadDatabase(): DatabaseState {
   try {
     const raw = fs.readFileSync(DB_FILE, 'utf-8');
     const state = JSON.parse(raw) as DatabaseState;
+    const defaults = createInitialState();
     let mutated = false;
-    if (state.settings?.siteName === 'MiniWorkers') {
-      state.settings.siteName = 'Viral Bolt';
-      state.settings.noticeBanner = state.settings.noticeBanner.replace(/MiniWorkers/g, 'Viral Bolt');
-      if (state.settings.supportEmail === 'support@miniworkers.example') {
-        state.settings.supportEmail = 'support@viralbolt.example';
+    if (state.settings?.siteName === 'Viral Bolt') {
+      state.settings.siteName = 'MiniWorkers';
+      state.settings.tagline = 'Human-Verified Micro-Jobs · Fast Multi-Gateway Payouts';
+      state.settings.accentTheme = 'teal';
+      state.settings.noticeBanner = state.settings.noticeBanner.replace(/Viral Bolt/g, 'MiniWorkers');
+      if (state.settings.supportEmail === 'support@viralbolt.example') {
+        state.settings.supportEmail = 'support@miniworkers.example';
       }
+      mutated = true;
+    }
+    const mergedSettings = { ...defaults.settings, ...(state.settings || {}) };
+    if (JSON.stringify(mergedSettings) !== JSON.stringify(state.settings)) {
+      state.settings = mergedSettings;
+      mutated = true;
+    }
+    if (!Array.isArray(state.blogPosts)) {
+      state.blogPosts = defaults.blogPosts;
+      mutated = true;
+    }
+    if (!Array.isArray(state.pages)) {
+      state.pages = defaults.pages;
+      mutated = true;
+    }
+    if (!Array.isArray(state.activityLogs)) {
+      state.activityLogs = [];
       mutated = true;
     }
     for (const u of state.users || []) {

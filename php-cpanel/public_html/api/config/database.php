@@ -2,12 +2,12 @@
 declare(strict_types=1);
 
 /**
- * Viral Bolt cPanel Database & Security Configuration
+ * MiniWorkers cPanel Database & Security Configuration
  * Update DB_NAME, DB_USER, DB_PASS, and APP_JWT_SECRET after creating your MySQL database in cPanel.
  */
 
 define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
-define('DB_NAME', getenv('DB_NAME') ?: 'cpanel_viralbolt');
+define('DB_NAME', getenv('DB_NAME') ?: 'cpanel_miniworkers');
 define('DB_USER', getenv('DB_USER') ?: 'cpanel_dbuser');
 define('DB_PASS', getenv('DB_PASS') ?: 'CHANGE_THIS_PASSWORD');
 

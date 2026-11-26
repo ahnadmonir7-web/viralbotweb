@@ -161,15 +161,73 @@ export interface SupportTicket {
   replies: TicketReply[];
 }
 
+export type AccentTheme = 'teal' | 'indigo' | 'violet' | 'emerald' | 'rose' | 'amber' | 'sky';
+
 export interface SiteSettings {
   siteName: string;
+  tagline: string;
+  logoUrl: string;
+  accentTheme: AccentTheme;
   currencySymbol: string;
   platformFeePercent: number;
   referralCommissionPercent: number;
   minJobWorkers: number;
+  minWithdrawAmount: number;
   autoApproveJobs: boolean;
+  allowRegistration: boolean;
+  maintenanceMode: boolean;
+  maintenanceMessage: string;
   noticeBanner: string;
   supportEmail: string;
+  heroKicker: string;
+  heroTitle: string;
+  heroSubtitle: string;
+  heroPrimaryCta: string;
+  heroSecondaryCta: string;
+  heroImageUrl: string;
+  showStatsStrip: boolean;
+  showHowItWorks: boolean;
+  showBlogSection: boolean;
+  founderName: string;
+  founderRole: string;
+  founderQuote: string;
+  footerText: string;
+}
+
+export interface BlogPost {
+  id: number;
+  title: string;
+  slug: string;
+  category: string;
+  excerpt: string;
+  content: string;
+  coverImageUrl: string;
+  authorName: string;
+  featured: boolean;
+  published: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CmsPage {
+  id: number;
+  title: string;
+  slug: string;
+  summary: string;
+  content: string;
+  showInHeader: boolean;
+  showInFooter: boolean;
+  published: boolean;
+  updatedAt: string;
+}
+
+export interface ActivityLog {
+  id: number;
+  adminId: number;
+  adminName: string;
+  action: string;
+  details: string;
+  createdAt: string;
 }
 
 export interface BootstrapPayload {
@@ -177,6 +235,8 @@ export interface BootstrapPayload {
   categories: Category[];
   gateways: Gateway[];
   jobs: MicroJob[];
+  blogPosts: BlogPost[];
+  pages: CmsPage[];
   stats: {
     activeJobsCount: number;
     totalWorkersCount: number;

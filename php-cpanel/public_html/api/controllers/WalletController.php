@@ -103,8 +103,10 @@ function handleWalletRoutes(PDO $pdo, string $method, string $path): bool {
         if (!$gw || $gw['type'] === 'deposit') {
             jsonResponse(['error' => 'Invalid withdrawal gateway.'], 400);
         }
-        if ($amount < (float)$gw['min_amount'] || $amount > (float)$gw['max_amount']) {
-            jsonResponse(['error' => "Amount must be between {$gw['min_amount']} and {$gw['max_amount']}."], 400);
+        $settings = getSettingsRow($pdo);
+        $minRequired = max((float)$gw['min_amount'], (float)$settings['minWithdrawAmount']);
+        if ($amount < $minRequired || $amount > (float)$gw['max_amount']) {
+            jsonResponse(['error' => "Amount must be between {$minRequired} and {$gw['max_amount']}."], 400);
         }
         if (strlen($accountNumber) < 5) {
             jsonResponse(['error' => 'Valid payout account/wallet is required.'], 400);

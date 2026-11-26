@@ -8,6 +8,16 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
+const RAW_API_BASE = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+
+function resolveApiUrl(path: string): string {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  if (RAW_API_BASE) {
+    return `${RAW_API_BASE}${normalizedPath}`;
+  }
+  return `/api${normalizedPath}`;
+}
+
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers || {});
   if (!headers.has('Content-Type') && options.body) {
@@ -17,13 +27,24 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
     headers.set('Authorization', `Bearer ${authToken}`);
   }
 
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(resolveApiUrl(path), {
     ...options,
     headers,
   });
 
+  const contentType = response.headers.get('content-type') || '';
   const text = await response.text();
   let data: unknown = {};
+
+  const looksLikeHtml =
+    contentType.includes('text/html') || /^\s*<!doctype\s+html/i.test(text) || /^\s*<html/i.test(text);
+
+  if (looksLikeHtml) {
+    throw new Error(
+      'Backend API (/api) is not connected on this host. If deploying the frontend on Cloudflare Pages, set VITE_API_URL to your PHP/Node backend API URL, or host the full PHP/MySQL package on cPanel.'
+    );
+  }
+
   try {
     data = text ? JSON.parse(text) : {};
   } catch {

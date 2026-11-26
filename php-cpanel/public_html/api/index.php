@@ -8,7 +8,16 @@ require_once __DIR__ . '/controllers/JobController.php';
 require_once __DIR__ . '/controllers/WalletController.php';
 require_once __DIR__ . '/controllers/AdminController.php';
 
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+if ($method === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
+
 $uriPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $path = preg_replace('#^/api#', '', $uriPath);
 if ($path === '' || $path === '/index.php') {

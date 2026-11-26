@@ -29,6 +29,9 @@ function handleJobRoutes(PDO $pdo, string $method, string $path): bool {
         $user = requireAuth($pdo);
         $body = getJsonBody();
         $settings = getSettingsRow($pdo);
+        if ($settings['maintenanceMode']) {
+            jsonResponse(['error' => $settings['maintenanceMessage'] ?: 'Maintenance mode is active.'], 503);
+        }
 
         $categoryId = (int)($body['categoryId'] ?? 0);
         $title = trim((string)($body['title'] ?? ''));
@@ -133,6 +136,10 @@ function handleJobRoutes(PDO $pdo, string $method, string $path): bool {
 
     if ($method === 'POST' && preg_match('#^/jobs/(\d+)/proofs$#', $path, $m)) {
         $user = requireAuth($pdo);
+        $settings = getSettingsRow($pdo);
+        if ($settings['maintenanceMode']) {
+            jsonResponse(['error' => $settings['maintenanceMessage'] ?: 'Task submissions are paused during maintenance.'], 503);
+        }
         $jobId = (int)$m[1];
         $body = getJsonBody();
         $proofText = trim((string)($body['proofText'] ?? ''));

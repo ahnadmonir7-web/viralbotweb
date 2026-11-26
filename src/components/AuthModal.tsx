@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ChevronRight,
-  Crown,
+  AtSign,
+  CheckCircle2,
   Eye,
   EyeOff,
+  Globe,
   Lock,
+  Mail,
   Phone,
-  Play,
   ShieldCheck,
   Tag,
   User as UserIcon,
@@ -15,27 +16,59 @@ import {
   Zap,
 } from 'lucide-react';
 import { apiRequest, setAuthToken } from '../api/client.ts';
-import type { User } from '../types.ts';
+import type { SiteSettings, User } from '../types.ts';
+import { getColorTheme } from '../utils/colors.ts';
 
 interface AuthModalProps {
   initialTab?: 'login' | 'register' | 'admin';
   initialReferralCode?: string;
+  settings?: SiteSettings;
   onClose: () => void;
   onSuccess: (user: User) => void;
 }
 
-export function AuthModal({ initialTab = 'login', initialReferralCode = '', onClose, onSuccess }: AuthModalProps) {
+const COUNTRIES = [
+  'Bangladesh',
+  'India',
+  'Pakistan',
+  'United States',
+  'United Kingdom',
+  'Indonesia',
+  'Philippines',
+  'Nigeria',
+  'Brazil',
+  'Canada',
+  'Germany',
+  'Global',
+];
+
+export function AuthModal({
+  initialTab = 'login',
+  initialReferralCode = '',
+  settings,
+  onClose,
+  onSuccess,
+}: AuthModalProps) {
   const [tab, setTab] = useState<'login' | 'register' | 'admin'>(initialTab);
+  const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
-  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [country, setCountry] = useState('Bangladesh');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+  const [agreedTerms, setAgreedTerms] = useState(true);
   const [referralCode, setReferralCode] = useState(initialReferralCode);
   const [adminClaimed, setAdminClaimed] = useState(true);
   const [hasEnvPasscode, setHasEnvPasscode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const siteName = settings?.siteName || 'MiniWorkers';
+  const brand = getColorTheme(settings?.accentTheme || 'teal');
 
   useEffect(() => {
     apiRequest<{ claimed: boolean; hasEnvPasscode: boolean }>('/auth/admin-status')
@@ -49,12 +82,24 @@ export function AuthModal({ initialTab = 'login', initialReferralCode = '', onCl
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+
+    if (tab === 'register') {
+      if (password !== confirmPassword) {
+        setError('Passwords do not match. Please re-enter the same password.');
+        return;
+      }
+      if (!agreedTerms) {
+        setError('Please accept the Terms & Rules before creating your account.');
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       if (tab === 'login') {
         const res = await apiRequest<{ token: string; user: User }>('/auth/login', {
           method: 'POST',
-          body: JSON.stringify({ phone, identifier: phone, password }),
+          body: JSON.stringify({ identifier, email: identifier, phone: identifier, password }),
         });
         setAuthToken(res.token);
         onSuccess(res.user);
@@ -62,9 +107,11 @@ export function AuthModal({ initialTab = 'login', initialReferralCode = '', onCl
         const res = await apiRequest<{ token: string; user: User }>('/auth/register', {
           method: 'POST',
           body: JSON.stringify({
+            name: fullName,
             username,
-            name: username,
+            email,
             phone,
+            country,
             password,
             referralCode,
           }),
@@ -76,8 +123,8 @@ export function AuthModal({ initialTab = 'login', initialReferralCode = '', onCl
           const res = await apiRequest<{ token: string; user: User }>('/auth/claim-admin', {
             method: 'POST',
             body: JSON.stringify({
-              name: username || 'Platform Admin',
-              email: email || 'admin@viralbolt.local',
+              name: fullName || 'Platform Admin',
+              email: email || 'admin@miniworkers.local',
               password,
             }),
           });
@@ -104,161 +151,385 @@ export function AuthModal({ initialTab = 'login', initialReferralCode = '', onCl
 
   function fillDemoWorker() {
     setTab('login');
-    setPhone('01711000001');
+    setIdentifier('arif@demo.com');
     setPassword('worker123');
     setError('');
   }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-xs"
       role="dialog"
       aria-modal="true"
     >
-      <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-fuchsia-500/45 bg-gradient-to-b from-[#1a093b] via-[#13062d] to-[#0b031c] text-white shadow-[0_0_50px_rgba(217,70,239,0.28)]">
-        {/* Top Viral Bolt Brand Banner */}
-        <div className="relative border-b border-fuchsia-500/20 bg-gradient-to-r from-[#240b52] via-[#340d6e] to-[#1d0845] px-6 py-5">
+      <div className="relative max-h-[92vh] w-full max-w-md overflow-y-auto rounded-3xl border border-slate-200 bg-white text-slate-900 shadow-2xl">
+        {/* Unique Ocean Teal & Coral Marketplace Brand Header */}
+        <div className="relative bg-gradient-to-r from-teal-700 via-teal-600 to-cyan-600 px-6 py-5 text-white">
           <button
             type="button"
             onClick={onClose}
-            className="absolute right-4 top-4 rounded-full bg-white/10 p-1.5 text-purple-100 transition-colors hover:bg-white/20 hover:text-white"
+            className="absolute right-4 top-4 rounded-full bg-white/15 p-1.5 text-white/90 transition-colors hover:bg-white/25 hover:text-white"
             aria-label="Close auth dialog"
           >
             <X className="h-4 w-4" />
           </button>
 
           <div className="flex items-center gap-3.5">
-            <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-fuchsia-500 via-purple-600 to-indigo-600 shadow-lg shadow-fuchsia-600/35">
-              <Crown className="absolute -top-2.5 h-4 w-4 text-amber-400" />
-              <Play className="h-5 w-5 fill-white text-white" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1">
-                <span className="font-display text-2xl font-extrabold italic tracking-tight text-white">Viral</span>
-                <span className="font-display text-2xl font-extrabold italic tracking-tight text-amber-400">Bolt</span>
-                <Zap className="h-5 w-5 fill-amber-400 text-amber-400" />
+            {settings?.logoUrl ? (
+              <img
+                src={settings.logoUrl}
+                alt={siteName}
+                referrerPolicy="no-referrer"
+                className="h-11 w-11 rounded-2xl border border-white/30 bg-white object-cover shadow-md"
+              />
+            ) : (
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-rose-500 text-white shadow-md">
+                <Zap className="h-5 w-5" />
               </div>
-              <p className="text-[11px] font-medium tracking-wide text-purple-200/85">
-                Watch · Enjoy · Unlimited Micro-Earnings
+            )}
+            <div>
+              <h2 className="font-display text-xl font-extrabold tracking-tight text-white">{siteName}</h2>
+              <p className="text-xs font-medium text-teal-50/90">
+                Micro-Jobs &amp; Freelance Task Marketplace
               </p>
             </div>
           </div>
         </div>
 
-        {/* Mode Pill Header */}
-        <div className="px-6 pt-5">
-          <div className="mx-auto flex w-fit items-center gap-2 rounded-full bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600 px-5 py-1.5 text-sm font-bold text-white shadow-md shadow-fuchsia-600/30">
-            {tab === 'register' && <UserPlus className="h-4 w-4" />}
-            {tab === 'admin' && <ShieldCheck className="h-4 w-4" />}
-            {tab === 'login' && <Phone className="h-4 w-4" />}
-            <span>
-              {tab === 'register' ? 'Registration' : tab === 'admin' ? 'Admin Panel' : 'Member Login'}
-            </span>
-          </div>
-        </div>
+        <div className="p-6">
+          {/* Segmented Member Auth Tabs (Login / Register) */}
+          {tab !== 'admin' ? (
+            <div className="mb-5 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setTab('login');
+                  setError('');
+                }}
+                className={`rounded-lg py-2 text-xs font-bold transition-colors whitespace-nowrap ${
+                  tab === 'login' ? `bg-white ${brand.text} shadow-xs` : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Member Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTab('register');
+                  setError('');
+                }}
+                className={`rounded-lg py-2 text-xs font-bold transition-colors whitespace-nowrap ${
+                  tab === 'register' ? `bg-white ${brand.text} shadow-xs` : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Create Account
+              </button>
+            </div>
+          ) : (
+            <div className="mb-5 flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                <ShieldCheck className={`h-4 w-4 ${brand.text}`} />
+                <span>Administrator Sign In</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setTab('login');
+                  setError('');
+                }}
+                className="text-xs font-semibold text-slate-500 hover:text-slate-800"
+              >
+                Member Login
+              </button>
+            </div>
+          )}
 
-        <div className="p-6 pt-5">
           {error && (
-            <div className="mb-4 rounded-2xl border border-rose-400/40 bg-rose-500/15 px-4 py-2.5 text-xs font-medium text-rose-200">
+            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-medium text-rose-700">
               {error}
             </div>
           )}
 
           {tab === 'admin' && !adminClaimed && !hasEnvPasscode && (
-            <div className="mb-4 rounded-2xl border border-amber-400/35 bg-amber-400/10 p-3.5 text-xs text-amber-100">
-              <p className="font-bold text-amber-300">First-Time Admin Setup</p>
-              <p className="mt-1 text-purple-100/90">
-                Choose your Admin email and password below to activate the Viral Bolt Admin Panel.
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-900">
+              <p className="font-bold">First-Time Admin Setup</p>
+              <p className="mt-1">
+                Enter your Admin name, email, and password below to activate the {siteName} Admin Panel.
               </p>
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-3.5">
-            {(tab === 'register' || (tab === 'admin' && !adminClaimed && !hasEnvPasscode)) && (
-              <div className="relative">
-                <UserIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-200" />
-                <input
-                  type="text"
-                  required={tab === 'register'}
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder={tab === 'admin' ? 'Admin Name' : 'User Name'}
-                  aria-label="User Name"
-                  className="w-full rounded-full border border-fuchsia-400/35 bg-[#231048] py-3 pl-11 pr-4 text-sm text-white placeholder:text-purple-200/65 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
-                />
-              </div>
-            )}
+            {tab === 'login' && (
+              <>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">Email or Username</label>
+                  <div className="relative">
+                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      required
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
+                      placeholder="you@example.com or username"
+                      className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-none"
+                    />
+                  </div>
+                </div>
 
-            {tab !== 'admin' && (
-              <div className="relative">
-                <Phone className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-200" />
-                <input
-                  type={tab === 'register' ? 'tel' : 'text'}
-                  required
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder={tab === 'register' ? 'Phone Number' : 'Phone Number or Email'}
-                  aria-label="Phone Number"
-                  className="w-full rounded-full border border-fuchsia-400/35 bg-[#231048] py-3 pl-11 pr-4 text-sm text-white placeholder:text-purple-200/65 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
-                />
-              </div>
-            )}
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">Password</label>
+                  <div className="relative">
+                    <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter your password"
+                      className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-10 pr-10 text-sm text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
 
-            {tab === 'admin' && !hasEnvPasscode && (
-              <div className="relative">
-                <UserIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-200" />
-                <input
-                  type="text"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Admin Email or Username"
-                  aria-label="Admin Email"
-                  className="w-full rounded-full border border-fuchsia-400/35 bg-[#231048] py-3 pl-11 pr-4 text-sm text-white placeholder:text-purple-200/65 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
-                />
-              </div>
+                <div className="flex items-center justify-between text-xs">
+                  <label className="inline-flex cursor-pointer items-center gap-2 text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded accent-teal-600"
+                    />
+                    Remember me
+                  </label>
+                  <button
+                    type="button"
+                    onClick={fillDemoWorker}
+                    className={`font-semibold ${brand.text} hover:underline`}
+                  >
+                    Fill Demo Worker
+                  </button>
+                </div>
+              </>
             )}
-
-            <div className="relative">
-              <Lock className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-200" />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                required
-                minLength={6}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={tab === 'admin' && hasEnvPasscode ? 'Admin Passcode' : 'Password'}
-                aria-label="Password"
-                className="w-full rounded-full border border-fuchsia-400/35 bg-[#231048] py-3 pl-11 pr-11 text-sm text-white placeholder:text-purple-200/65 focus:border-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((prev) => !prev)}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-purple-200/80 transition-colors hover:text-white"
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-              </button>
-            </div>
 
             {tab === 'register' && (
-              <div className="relative">
-                <Tag className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-200/80" />
-                <input
-                  type="text"
-                  value={referralCode}
-                  onChange={(e) => setReferralCode(e.target.value)}
-                  placeholder="Referral Code (Optional)"
-                  aria-label="Referral Code"
-                  className="w-full rounded-full border border-fuchsia-400/25 bg-[#1d0c3d] py-2.5 pl-11 pr-4 text-xs uppercase text-white placeholder:normal-case placeholder:text-purple-200/55 focus:border-fuchsia-400 focus:outline-none"
-                />
-              </div>
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Full Name</label>
+                    <div className="relative">
+                      <UserIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        required
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        placeholder="Arif Rahman"
+                        className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Username</label>
+                    <div className="relative">
+                      <AtSign className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        required
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        placeholder="arif_worker"
+                        className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">Email Address</label>
+                  <div className="relative">
+                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="name@example.com"
+                      className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Country</label>
+                    <div className="relative">
+                      <Globe className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <select
+                        value={country}
+                        onChange={(e) => setCountry(e.target.value)}
+                        className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-none"
+                      >
+                        {COUNTRIES.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Phone (Optional)</label>
+                    <div className="relative">
+                      <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="+88017..."
+                        className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Password</label>
+                    <div className="relative">
+                      <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        required
+                        minLength={6}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Min 6 chars"
+                        className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-9 text-sm text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Confirm Password</label>
+                    <div className="relative">
+                      <CheckCircle2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        required
+                        minLength={6}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Repeat password"
+                        className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">Referral Code (Optional)</label>
+                  <div className="relative">
+                    <Tag className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={referralCode}
+                      onChange={(e) => setReferralCode(e.target.value)}
+                      placeholder="e.g. ARIF2026"
+                      className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2 pl-10 pr-4 text-xs uppercase text-slate-900 placeholder:normal-case focus:border-teal-600 focus:bg-white focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={agreedTerms}
+                    onChange={(e) => setAgreedTerms(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded accent-teal-600"
+                  />
+                  I agree to the {siteName} Terms &amp; Fair-Use Rules
+                </label>
+              </>
+            )}
+
+            {tab === 'admin' && (
+              <>
+                {!adminClaimed && !hasEnvPasscode && (
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Admin Display Name</label>
+                    <input
+                      type="text"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Platform Admin"
+                      className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-none"
+                    />
+                  </div>
+                )}
+
+                {!hasEnvPasscode && (
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Admin Email or Username</label>
+                    <input
+                      type="text"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="admin@miniworkers.local"
+                      className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-none"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">
+                    {hasEnvPasscode ? 'Admin Passcode' : 'Password'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 pr-10 text-sm text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
 
             <button
               type="submit"
               disabled={loading}
-              className="mt-1 flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-rose-500 via-fuchsia-600 to-indigo-600 py-3 text-sm font-extrabold text-white shadow-lg shadow-fuchsia-600/35 transition-all hover:brightness-110 disabled:opacity-60"
+              className={`mt-1 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white shadow-md transition-all disabled:opacity-60 ${brand.bg} ${brand.hoverBg}`}
             >
               {tab === 'register' && <UserPlus className="h-4 w-4" />}
               {tab === 'admin' && <ShieldCheck className="h-4 w-4" />}
@@ -266,92 +537,61 @@ export function AuthModal({ initialTab = 'login', initialReferralCode = '', onCl
                 {loading
                   ? 'Please wait...'
                   : tab === 'register'
-                    ? 'Register'
+                    ? 'Create Free Account'
                     : tab === 'login'
-                      ? 'Login'
+                      ? 'Sign In to Workspace'
                       : !adminClaimed && !hasEnvPasscode
                         ? 'Claim & Open Admin'
                         : 'Admin Sign In'}
               </span>
-              <ChevronRight className="h-4 w-4" />
             </button>
           </form>
 
-          {tab === 'login' && (
-            <div className="mt-3">
-              <button
-                type="button"
-                onClick={fillDemoWorker}
-                className="w-full rounded-full border border-fuchsia-400/30 bg-white/5 px-4 py-2 text-xs font-semibold text-purple-100 transition-colors hover:bg-white/10"
-              >
-                Use Demo Account (01711000001 / worker123)
-              </button>
-            </div>
-          )}
-
-          {/* OR Divider & Login/Register Switch */}
-          <div className="my-4 flex items-center gap-3">
-            <div className="h-px flex-1 bg-purple-400/25" />
-            <span className="text-[11px] font-bold tracking-widest text-purple-200/80">OR</span>
-            <div className="h-px flex-1 bg-purple-400/25" />
-          </div>
-
-          <div className="text-center text-xs text-purple-200/85">
+          <div className="mt-5 border-t border-slate-100 pt-4 text-center text-xs text-slate-500">
             {tab === 'register' ? (
               <p>
-                Already have an account?{' '}
+                Already registered?{' '}
                 <button
                   type="button"
                   onClick={() => {
                     setTab('login');
                     setError('');
                   }}
-                  className="font-bold text-amber-400 underline-offset-2 hover:underline"
+                  className={`font-bold ${brand.text} hover:underline`}
                 >
-                  Login
+                  Sign In Here
                 </button>
               </p>
             ) : (
               <p>
-                Don&apos;t have an account?{' '}
+                New to {siteName}?{' '}
                 <button
                   type="button"
                   onClick={() => {
                     setTab('register');
                     setError('');
                   }}
-                  className="font-bold text-amber-400 underline-offset-2 hover:underline"
+                  className={`font-bold ${brand.text} hover:underline`}
                 >
-                  Register
+                  Register Free
                 </button>
               </p>
             )}
 
-            <div className="mt-3 pt-2 border-t border-purple-500/20">
-              {tab !== 'admin' ? (
+            {tab !== 'admin' && (
+              <div className="mt-2.5">
                 <button
                   type="button"
                   onClick={() => {
                     setTab('admin');
                     setError('');
                   }}
-                  className="text-[11px] font-semibold text-purple-300/75 hover:text-white"
+                  className="text-[11px] font-semibold text-slate-400 hover:text-slate-700"
                 >
-                  Admin Panel Login
+                  Administrator Login
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTab('login');
-                    setError('');
-                  }}
-                  className="text-[11px] font-semibold text-purple-300/75 hover:text-white"
-                >
-                  Back to Member Login
-                </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -126,10 +126,48 @@ function requireAdmin(req: AuthedRequest, res: Response, next: NextFunction) {
 
 async function startServer() {
   const app = express();
+  app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
   app.use(express.json({ limit: '4mb' }));
 
   // Serve uploaded proof/KYC screenshots safely
   app.use('/uploads', express.static(UPLOAD_DIR));
+
+  function logAdminAction(
+    db: ReturnType<typeof loadDatabase>,
+    admin: { id: number; name: string },
+    action: string,
+    details: string
+  ) {
+    db.activityLogs.unshift({
+      id: allocateId(db),
+      adminId: admin.id,
+      adminName: admin.name,
+      action,
+      details,
+      createdAt: new Date().toISOString(),
+    });
+    if (db.activityLogs.length > 100) {
+      db.activityLogs = db.activityLogs.slice(0, 100);
+    }
+  }
+
+  function sanitizeUrl(raw: unknown): string {
+    const val = String(raw || '').trim();
+    if (!val) return '';
+    if (val.startsWith('/') || /^https?:\/\//i.test(val)) {
+      return val;
+    }
+    return '';
+  }
 
   // Public Bootstrap
   app.get('/api/bootstrap', (_req, res) => {
@@ -137,6 +175,10 @@ async function startServer() {
     const activeJobs = db.jobs
       .filter((j) => j.status === 'active')
       .sort((a, b) => Number(b.featured) - Number(a.featured) || b.id - a.id);
+    const publishedPosts = db.blogPosts
+      .filter((p) => p.published)
+      .sort((a, b) => Number(b.featured) - Number(a.featured) || b.id - a.id);
+    const publishedPages = db.pages.filter((p) => p.published);
     const workersCount = db.users.filter((u) => u.role === 'user').length;
     const totalTasksPaid = db.users.reduce((sum, u) => sum + u.tasksCompleted, 0);
     const totalPaidOutUsd = db.withdrawals
@@ -148,6 +190,8 @@ async function startServer() {
       categories: db.categories.filter((c) => c.active),
       gateways: db.gateways.filter((g) => g.active),
       jobs: activeJobs,
+      blogPosts: publishedPosts,
+      pages: publishedPages,
       stats: {
         activeJobsCount: activeJobs.length,
         totalWorkersCount: workersCount,
@@ -170,8 +214,8 @@ async function startServer() {
 
   app.post('/api/auth/claim-admin', (req, res) => {
     const db = loadDatabase();
-    const email = String(req.body?.email || 'admin@viralbolt.local').trim().toLowerCase();
-    const password = String(req.body?.password || '');
+    const email = String(req.body?.email || 'admin@miniworkers.local').trim().toLowerCase();
+    const password = (req.body?.password || '') as string;
     const name = String(req.body?.name || 'Platform Admin').trim() || 'Platform Admin';
     const envPass = (process.env.ADMIN_PASSCODE || '').trim();
 
@@ -224,6 +268,10 @@ async function startServer() {
 
   app.post('/api/auth/register', (req, res) => {
     const db = loadDatabase();
+    if (!db.settings.allowRegistration) {
+      res.status(403).json({ error: 'New user registration is currently paused by administration.' });
+      return;
+    }
     const rawUsername = String(req.body?.username || req.body?.name || '').trim();
     const name = String(req.body?.name || rawUsername).trim();
     const phone = String(req.body?.phone || '').replace(/[^\d+]/g, '').trim();
@@ -232,24 +280,29 @@ async function startServer() {
     const country = String(req.body?.country || 'Bangladesh').trim() || 'Bangladesh';
     const refInput = String(req.body?.referralCode || '').trim().toUpperCase();
 
-    if (rawUsername.length < 2 || phone.length < 7 || password.length < 6) {
-      res.status(400).json({ error: 'Enter a valid User Name (2+ chars), Phone Number (7+ digits), and 6+ character Password.' });
+    if (name.length < 2 || rawUsername.length < 2 || password.length < 6) {
+      res.status(400).json({ error: 'Enter a valid Full Name, Username (2+ chars), and 6+ character Password.' });
+      return;
+    }
+
+    if (!rawEmail.includes('@') && phone.length < 7) {
+      res.status(400).json({ error: 'Enter a valid Email Address (or Phone Number).' });
       return;
     }
 
     const normalizedUsername = rawUsername.toLowerCase().replace(/\s+/g, '_');
-    const email = rawEmail && rawEmail.includes('@') ? rawEmail : `${phone.replace(/\+/g, '')}@viralbolt.user`;
+    const email = rawEmail && rawEmail.includes('@') ? rawEmail : `${phone.replace(/\+/g, '')}@miniworkers.user`;
 
-    if (db.users.some((u) => u.phone && u.phone === phone)) {
+    if (phone && db.users.some((u) => u.phone && u.phone === phone)) {
       res.status(409).json({ error: 'An account with this Phone Number already exists.' });
       return;
     }
     if (db.users.some((u) => u.username.toLowerCase() === normalizedUsername)) {
-      res.status(409).json({ error: 'This User Name is already taken.' });
+      res.status(409).json({ error: 'This Username is already taken.' });
       return;
     }
     if (db.users.some((u) => u.email === email)) {
-      res.status(409).json({ error: 'An account with this email already exists.' });
+      res.status(409).json({ error: 'An account with this Email Address already exists.' });
       return;
     }
 
@@ -307,7 +360,7 @@ async function startServer() {
         u.username.toLowerCase() === idLower
     );
     if (!user || !verifyPassword(password, user.passwordHash)) {
-      res.status(401).json({ error: 'Invalid Phone Number / Email or Password.' });
+      res.status(401).json({ error: 'Invalid Email / Username or Password.' });
       return;
     }
     if (user.status === 'banned') {
@@ -379,6 +432,10 @@ async function startServer() {
 
   app.post('/api/jobs', requireAuth, (req: AuthedRequest, res) => {
     const db = loadDatabase();
+    if (db.settings.maintenanceMode && req.authUser!.role !== 'admin') {
+      res.status(503).json({ error: db.settings.maintenanceMessage || 'Maintenance mode is active.' });
+      return;
+    }
     const user = db.users.find((u) => u.id === req.authUser!.id)!;
     const categoryId = Number(req.body?.categoryId || 0);
     const title = String(req.body?.title || '').trim();
@@ -479,6 +536,10 @@ async function startServer() {
 
   app.post('/api/jobs/:id/proofs', requireAuth, (req: AuthedRequest, res) => {
     const db = loadDatabase();
+    if (db.settings.maintenanceMode && req.authUser!.role !== 'admin') {
+      res.status(503).json({ error: db.settings.maintenanceMessage || 'Maintenance mode is active.' });
+      return;
+    }
     const jobId = Number(req.params.id);
     const job = db.jobs.find((j) => j.id === jobId);
     if (!job || job.status !== 'active') {
@@ -703,8 +764,9 @@ async function startServer() {
       res.status(400).json({ error: 'Select a valid withdrawal gateway.' });
       return;
     }
-    if (amount < gw.minAmount || amount > gw.maxAmount) {
-      res.status(400).json({ error: `Withdrawal amount must be between $${gw.minAmount} and $${gw.maxAmount}.` });
+    const minRequired = Math.max(gw.minAmount, db.settings.minWithdrawAmount || 0);
+    if (amount < minRequired || amount > gw.maxAmount) {
+      res.status(400).json({ error: `Withdrawal amount must be between $${minRequired} and $${gw.maxAmount}.` });
       return;
     }
     if (accountNumber.length < 5) {
@@ -885,24 +947,58 @@ async function startServer() {
   });
 
   // Admin Routes
+  app.post('/api/admin/upload', requireAdmin, (req: AuthedRequest, res) => {
+    const imageData = String(req.body?.imageData || '').trim();
+    if (!imageData) {
+      res.status(400).json({ error: 'Image data is required.' });
+      return;
+    }
+    try {
+      const url = saveBase64Image(imageData);
+      res.json({ url });
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+    }
+  });
+
   app.get('/api/admin/overview', requireAdmin, (_req, res) => {
     const db = loadDatabase();
     const pendingDepositsList = db.deposits.filter((d) => d.status === 'pending');
+    const approvedDepositsList = db.deposits.filter((d) => d.status === 'approved');
     const pendingWithdrawalsList = db.withdrawals.filter((w) => w.status === 'pending');
+    const approvedWithdrawalsList = db.withdrawals.filter((w) => w.status === 'approved');
     const platformRevenue = db.jobs
       .filter((j) => j.status === 'active' || j.status === 'completed' || j.status === 'paused')
       .reduce((sum, j) => sum + j.platformFee, 0);
+    const totalUserEarnings = db.users
+      .filter((u) => u.role === 'user')
+      .reduce((sum, u) => sum + u.earningBalance, 0);
+    const totalUserDeposits = db.users
+      .filter((u) => u.role === 'user')
+      .reduce((sum, u) => sum + u.depositBalance, 0);
 
     res.json({
       totalUsers: db.users.filter((u) => u.role === 'user').length,
+      activeJobs: db.jobs.filter((j) => j.status === 'active').length,
       pendingJobs: db.jobs.filter((j) => j.status === 'pending').length,
       pendingDeposits: pendingDepositsList.length,
       pendingDepositsAmount: Number(pendingDepositsList.reduce((s, d) => s + d.amount, 0).toFixed(2)),
+      approvedDepositsAmount: Number(approvedDepositsList.reduce((s, d) => s + d.amount, 0).toFixed(2)),
       pendingWithdrawals: pendingWithdrawalsList.length,
       pendingWithdrawalsAmount: Number(pendingWithdrawalsList.reduce((s, w) => s + w.amount, 0).toFixed(2)),
+      approvedWithdrawalsAmount: Number(approvedWithdrawalsList.reduce((s, w) => s + w.amount, 0).toFixed(2)),
       openTickets: db.tickets.filter((t) => t.status === 'open' || t.status === 'answered').length,
       platformRevenue: Number(platformRevenue.toFixed(2)),
+      totalUserEarnings: Number(totalUserEarnings.toFixed(2)),
+      totalUserDeposits: Number(totalUserDeposits.toFixed(2)),
+      publishedBlogs: db.blogPosts.filter((b) => b.published).length,
+      publishedPages: db.pages.filter((p) => p.published).length,
     });
+  });
+
+  app.get('/api/admin/activity', requireAdmin, (_req, res) => {
+    const db = loadDatabase();
+    res.json({ logs: db.activityLogs });
   });
 
   app.get('/api/admin/jobs', requireAdmin, (_req, res) => {
@@ -912,7 +1008,104 @@ async function startServer() {
     res.json({ jobs });
   });
 
-  app.post('/api/admin/jobs/:id/decision', requireAdmin, (req, res) => {
+  app.post('/api/admin/jobs', requireAdmin, (req: AuthedRequest, res) => {
+    const db = loadDatabase();
+    const categoryId = Number(req.body?.categoryId || 0);
+    const title = String(req.body?.title || '').trim();
+    const targetRegion = String(req.body?.targetRegion || 'Worldwide').trim() || 'Worldwide';
+    const targetUrl = sanitizeUrl(req.body?.targetUrl);
+    const steps = Array.isArray(req.body?.steps)
+      ? req.body.steps.map((s: unknown) => String(s).trim()).filter(Boolean)
+      : String(req.body?.stepsText || '')
+          .split('\n')
+          .map((s) => s.trim())
+          .filter(Boolean);
+    const proofRequirement = String(req.body?.proofRequirement || '').trim();
+    const requireScreenshot = Boolean(req.body?.requireScreenshot);
+    const rewardPerWorker = Math.max(0.01, Number(Number(req.body?.rewardPerWorker || 0.1).toFixed(4)));
+    const workersNeeded = Math.max(1, Math.floor(Number(req.body?.workersNeeded || 10)));
+    const estimatedMinutes = Math.max(1, Math.floor(Number(req.body?.estimatedMinutes || 3)));
+    const featured = Boolean(req.body?.featured);
+
+    const category = db.categories.find((c) => c.id === categoryId);
+    if (!category || title.length < 4 || steps.length === 0 || proofRequirement.length < 4) {
+      res.status(400).json({ error: 'Category, title, steps, and proof requirement are required.' });
+      return;
+    }
+
+    const baseCost = Number((rewardPerWorker * workersNeeded).toFixed(4));
+    const jobId = allocateId(db);
+    const job = {
+      id: jobId,
+      employerId: req.authUser!.id,
+      employerName: db.settings.siteName || req.authUser!.name,
+      categoryId: category.id,
+      categoryName: category.name,
+      categoryColor: category.color,
+      title,
+      targetRegion,
+      targetUrl,
+      steps,
+      proofRequirement,
+      requireScreenshot,
+      rewardPerWorker,
+      workersNeeded,
+      workersCompleted: 0,
+      platformFee: 0,
+      totalBudget: baseCost,
+      featured,
+      status: 'active' as const,
+      estimatedMinutes,
+      createdAt: new Date().toISOString(),
+    };
+    db.jobs.unshift(job);
+    logAdminAction(db, req.authUser!, 'Create Job', `Created official campaign #${jobId}: ${title}`);
+    saveDatabase(db);
+    res.status(201).json({ job });
+  });
+
+  app.put('/api/admin/jobs/:id', requireAdmin, (req: AuthedRequest, res) => {
+    const db = loadDatabase();
+    const job = db.jobs.find((j) => j.id === Number(req.params.id));
+    if (!job) {
+      res.status(404).json({ error: 'Job not found.' });
+      return;
+    }
+    if (req.body?.categoryId) {
+      const cat = db.categories.find((c) => c.id === Number(req.body.categoryId));
+      if (cat) {
+        job.categoryId = cat.id;
+        job.categoryName = cat.name;
+        job.categoryColor = cat.color;
+      }
+    }
+    job.title = String(req.body?.title || job.title).trim();
+    job.targetRegion = String(req.body?.targetRegion ?? job.targetRegion).trim();
+    if (req.body?.targetUrl !== undefined) {
+      job.targetUrl = sanitizeUrl(req.body.targetUrl);
+    }
+    if (Array.isArray(req.body?.steps)) {
+      job.steps = req.body.steps.map((s: unknown) => String(s).trim()).filter(Boolean);
+    }
+    job.proofRequirement = String(req.body?.proofRequirement ?? job.proofRequirement).trim();
+    if (req.body?.requireScreenshot !== undefined) job.requireScreenshot = Boolean(req.body.requireScreenshot);
+    if (req.body?.rewardPerWorker !== undefined) {
+      job.rewardPerWorker = Math.max(0.01, Number(Number(req.body.rewardPerWorker).toFixed(4)));
+    }
+    if (req.body?.workersNeeded !== undefined) {
+      job.workersNeeded = Math.max(job.workersCompleted, Math.floor(Number(req.body.workersNeeded)));
+    }
+    if (['pending', 'active', 'paused', 'completed', 'rejected'].includes(req.body?.status)) {
+      job.status = req.body.status;
+    }
+    if (req.body?.featured !== undefined) job.featured = Boolean(req.body.featured);
+
+    logAdminAction(db, req.authUser!, 'Edit Job', `Updated campaign #${job.id}: ${job.title}`);
+    saveDatabase(db);
+    res.json({ job });
+  });
+
+  app.post('/api/admin/jobs/:id/decision', requireAdmin, (req: AuthedRequest, res) => {
     const db = loadDatabase();
     const jobId = Number(req.params.id);
     const action = req.body?.action;
@@ -927,6 +1120,8 @@ async function startServer() {
     if (action === 'approve') {
       job.status = 'active';
       job.rejectionReason = undefined;
+    } else if (action === 'pause') {
+      job.status = job.status === 'paused' ? 'active' : 'paused';
     } else if (action === 'reject') {
       const wasPending = job.status === 'pending';
       job.status = 'rejected';
@@ -954,6 +1149,7 @@ async function startServer() {
       res.status(400).json({ error: 'Invalid action.' });
       return;
     }
+    logAdminAction(db, req.authUser!, 'Job Action', `${action} on Job #${jobId}`);
     saveDatabase(db);
     res.json({ ok: true });
   });
@@ -963,7 +1159,7 @@ async function startServer() {
     res.json({ categories: db.categories });
   });
 
-  app.post('/api/admin/categories', requireAdmin, (req, res) => {
+  app.post('/api/admin/categories', requireAdmin, (req: AuthedRequest, res) => {
     const db = loadDatabase();
     const name = String(req.body?.name || '').trim();
     if (!name) {
@@ -979,6 +1175,7 @@ async function startServer() {
       description: String(req.body?.description || ''),
       active: true,
     });
+    logAdminAction(db, req.authUser!, 'Add Category', `Created category "${name}"`);
     saveDatabase(db);
     res.status(201).json({ ok: true });
   });
@@ -1011,7 +1208,69 @@ async function startServer() {
     res.json({ deposits: [...db.deposits].sort((a, b) => b.id - a.id) });
   });
 
-  app.post('/api/admin/deposits/:id/decision', requireAdmin, (req, res) => {
+  app.post('/api/admin/deposits/manual', requireAdmin, (req: AuthedRequest, res) => {
+    const db = loadDatabase();
+    const userId = Number(req.body?.userId || 0);
+    const gatewayId = Number(req.body?.gatewayId || 0);
+    const amount = Number(Number(req.body?.amount || 0).toFixed(2));
+    const trxId = String(req.body?.trxId || '').trim() || `ADM-${Date.now().toString().slice(-6)}`;
+    const note = String(req.body?.note || 'Manual Admin Deposit').trim();
+    const targetWallet = req.body?.wallet === 'earning' ? 'earning' : 'deposit';
+
+    const user = db.users.find((u) => u.id === userId);
+    if (!user) {
+      res.status(404).json({ error: 'Selected user not found.' });
+      return;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      res.status(400).json({ error: 'Enter a positive deposit amount.' });
+      return;
+    }
+    const gw = db.gateways.find((g) => g.id === gatewayId);
+    const gatewayName = gw ? gw.name : String(req.body?.gatewayName || 'Admin Manual Credit');
+
+    const now = new Date().toISOString();
+    const depId = allocateId(db);
+    db.deposits.unshift({
+      id: depId,
+      userId: user.id,
+      userName: user.name,
+      userEmail: user.email,
+      gatewayId: gw ? gw.id : 0,
+      gatewayName,
+      amount,
+      trxId,
+      status: 'approved',
+      adminNote: note,
+      createdAt: now,
+      processedAt: now,
+    });
+
+    if (targetWallet === 'earning') {
+      user.earningBalance = Number((user.earningBalance + amount).toFixed(4));
+    } else {
+      user.depositBalance = Number((user.depositBalance + amount).toFixed(4));
+    }
+    db.transactions.unshift({
+      id: allocateId(db),
+      userId: user.id,
+      type: 'deposit',
+      wallet: targetWallet,
+      amount,
+      description: `Manual Deposit via ${gatewayName} (${trxId})`,
+      createdAt: now,
+    });
+    logAdminAction(
+      db,
+      req.authUser!,
+      'Manual Deposit',
+      `Credited $${amount.toFixed(2)} (${targetWallet}) to ${user.name} via ${gatewayName}`
+    );
+    saveDatabase(db);
+    res.status(201).json({ ok: true, depositId: depId });
+  });
+
+  app.post('/api/admin/deposits/:id/decision', requireAdmin, (req: AuthedRequest, res) => {
     const db = loadDatabase();
     const dep = db.deposits.find((d) => d.id === Number(req.params.id));
     if (!dep || dep.status !== 'pending') {
@@ -1042,6 +1301,7 @@ async function startServer() {
         });
       }
     }
+    logAdminAction(db, req.authUser!, 'Deposit Decision', `${decision} deposit #${dep.id} ($${dep.amount})`);
     saveDatabase(db);
     res.json({ ok: true });
   });
@@ -1051,7 +1311,78 @@ async function startServer() {
     res.json({ withdrawals: [...db.withdrawals].sort((a, b) => b.id - a.id) });
   });
 
-  app.post('/api/admin/withdrawals/:id/decision', requireAdmin, (req, res) => {
+  app.post('/api/admin/withdrawals/manual', requireAdmin, (req: AuthedRequest, res) => {
+    const db = loadDatabase();
+    const userId = Number(req.body?.userId || 0);
+    const gatewayId = Number(req.body?.gatewayId || 0);
+    const amount = Number(Number(req.body?.amount || 0).toFixed(2));
+    const accountNumber = String(req.body?.accountNumber || '').trim();
+    const note = String(req.body?.note || 'Manual Admin Payout').trim();
+
+    const user = db.users.find((u) => u.id === userId);
+    if (!user) {
+      res.status(404).json({ error: 'Selected user not found.' });
+      return;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      res.status(400).json({ error: 'Enter a positive withdrawal amount.' });
+      return;
+    }
+    if (user.earningBalance < amount) {
+      res.status(400).json({ error: 'User does not have enough Earning Balance for this payout.' });
+      return;
+    }
+    if (accountNumber.length < 3) {
+      res.status(400).json({ error: 'Enter a receiving account or reference.' });
+      return;
+    }
+
+    const gw = db.gateways.find((g) => g.id === gatewayId);
+    const gatewayName = gw ? gw.name : 'Manual Payout';
+    const feePercent = gw ? gw.feePercent : 0;
+    const feeAmount = Number((amount * (feePercent / 100)).toFixed(2));
+    const netAmount = Number((amount - feeAmount).toFixed(2));
+
+    user.earningBalance = Number((user.earningBalance - amount).toFixed(4));
+    const now = new Date().toISOString();
+    const wdId = allocateId(db);
+
+    db.withdrawals.unshift({
+      id: wdId,
+      userId: user.id,
+      userName: user.name,
+      userEmail: user.email,
+      gatewayId: gw ? gw.id : 0,
+      gatewayName,
+      amount,
+      feeAmount,
+      netAmount,
+      accountNumber,
+      status: 'approved',
+      adminNote: note,
+      createdAt: now,
+      processedAt: now,
+    });
+    db.transactions.unshift({
+      id: allocateId(db),
+      userId: user.id,
+      type: 'withdraw',
+      wallet: 'earning',
+      amount: -amount,
+      description: `Manual Payout #${wdId} via ${gatewayName} (${accountNumber})`,
+      createdAt: now,
+    });
+    logAdminAction(
+      db,
+      req.authUser!,
+      'Manual Payout',
+      `Issued $${amount.toFixed(2)} payout to ${user.name} via ${gatewayName}`
+    );
+    saveDatabase(db);
+    res.status(201).json({ ok: true, withdrawalId: wdId });
+  });
+
+  app.post('/api/admin/withdrawals/:id/decision', requireAdmin, (req: AuthedRequest, res) => {
     const db = loadDatabase();
     const wd = db.withdrawals.find((w) => w.id === Number(req.params.id));
     if (!wd || wd.status !== 'pending') {
@@ -1082,6 +1413,7 @@ async function startServer() {
         });
       }
     }
+    logAdminAction(db, req.authUser!, 'Withdrawal Decision', `${decision} payout #${wd.id} ($${wd.amount})`);
     saveDatabase(db);
     res.json({ ok: true });
   });
@@ -1091,12 +1423,112 @@ async function startServer() {
     res.json({ users: db.users.map(sanitizeUser).sort((a, b) => b.id - a.id) });
   });
 
+  app.get('/api/admin/users/:id/activity', requireAdmin, (req, res) => {
+    const db = loadDatabase();
+    const uid = Number(req.params.id);
+    const transactions = db.transactions.filter((t) => t.userId === uid).sort((a, b) => b.id - a.id).slice(0, 25);
+    const proofs = db.proofs.filter((p) => p.workerId === uid).sort((a, b) => b.id - a.id).slice(0, 15);
+    res.json({ transactions, proofs });
+  });
+
+  app.post('/api/admin/users', requireAdmin, (req: AuthedRequest, res) => {
+    const db = loadDatabase();
+    const name = String(req.body?.name || '').trim();
+    const username = String(req.body?.username || name).trim();
+    const phone = String(req.body?.phone || '').replace(/[^\d+]/g, '').trim();
+    const rawEmail = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    const country = String(req.body?.country || 'Bangladesh').trim() || 'Bangladesh';
+    const role = req.body?.role === 'admin' ? 'admin' : 'user';
+    const kycStatus = ['unverified', 'pending', 'verified', 'rejected'].includes(req.body?.kycStatus)
+      ? req.body.kycStatus
+      : 'unverified';
+    const earningBalance = Math.max(0, Number(req.body?.earningBalance || 0));
+    const depositBalance = Math.max(0, Number(req.body?.depositBalance || 0));
+
+    if (username.length < 2 || password.length < 6 || (!phone && !rawEmail)) {
+      res.status(400).json({ error: 'Name/Username, Password (6+ chars), and Phone or Email are required.' });
+      return;
+    }
+    const email = rawEmail && rawEmail.includes('@') ? rawEmail : `${phone.replace(/\+/g, '')}@miniworkers.user`;
+    if (phone && db.users.some((u) => u.phone === phone)) {
+      res.status(409).json({ error: 'Phone number already exists.' });
+      return;
+    }
+    if (db.users.some((u) => u.username.toLowerCase() === username.toLowerCase())) {
+      res.status(409).json({ error: 'Username already taken.' });
+      return;
+    }
+    if (db.users.some((u) => u.email === email)) {
+      res.status(409).json({ error: 'Email already exists.' });
+      return;
+    }
+
+    const prefix = username.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 4) || 'USER';
+    const newUser: StoredUser = {
+      id: allocateId(db),
+      name: name || username,
+      username,
+      phone,
+      email,
+      country,
+      role,
+      status: 'active',
+      kycStatus,
+      earningBalance,
+      depositBalance,
+      referralCode: `${prefix}${crypto.randomBytes(2).toString('hex').toUpperCase()}`,
+      referredBy: null,
+      referralEarned: 0,
+      tasksCompleted: 0,
+      createdAt: new Date().toISOString(),
+      passwordHash: hashPassword(password),
+    };
+    db.users.push(newUser);
+    logAdminAction(db, req.authUser!, 'Create User', `Created user ${newUser.name} (@${newUser.username})`);
+    saveDatabase(db);
+    res.status(201).json({ user: sanitizeUser(newUser) });
+  });
+
   app.post('/api/admin/users/:id/update', requireAdmin, (req: AuthedRequest, res) => {
     const db = loadDatabase();
     const user = db.users.find((u) => u.id === Number(req.params.id));
     if (!user) {
       res.status(404).json({ error: 'User not found.' });
       return;
+    }
+    if (typeof req.body?.name === 'string' && req.body.name.trim().length >= 2) {
+      user.name = req.body.name.trim();
+    }
+    if (typeof req.body?.username === 'string' && req.body.username.trim().length >= 2) {
+      const nextU = req.body.username.trim();
+      if (db.users.some((u) => u.id !== user.id && u.username.toLowerCase() === nextU.toLowerCase())) {
+        res.status(409).json({ error: 'Username already taken by another user.' });
+        return;
+      }
+      user.username = nextU;
+    }
+    if (typeof req.body?.phone === 'string') {
+      const nextP = req.body.phone.replace(/[^\d+]/g, '').trim();
+      if (nextP && db.users.some((u) => u.id !== user.id && u.phone === nextP)) {
+        res.status(409).json({ error: 'Phone number already exists.' });
+        return;
+      }
+      user.phone = nextP;
+    }
+    if (typeof req.body?.email === 'string' && req.body.email.includes('@')) {
+      const nextE = req.body.email.trim().toLowerCase();
+      if (db.users.some((u) => u.id !== user.id && u.email === nextE)) {
+        res.status(409).json({ error: 'Email already used by another user.' });
+        return;
+      }
+      user.email = nextE;
+    }
+    if (typeof req.body?.country === 'string' && req.body.country.trim()) {
+      user.country = req.body.country.trim();
+    }
+    if ((req.body?.role === 'user' || req.body?.role === 'admin') && user.id !== req.authUser!.id) {
+      user.role = req.body.role;
     }
     if (req.body?.status === 'active' || req.body?.status === 'banned') {
       if (user.id !== req.authUser!.id) {
@@ -1105,6 +1537,9 @@ async function startServer() {
     }
     if (['unverified', 'pending', 'verified', 'rejected'].includes(req.body?.kycStatus)) {
       user.kycStatus = req.body.kycStatus;
+    }
+    if (typeof req.body?.newPassword === 'string' && req.body.newPassword.length >= 6) {
+      user.passwordHash = hashPassword(req.body.newPassword);
     }
     const adjustAmount = Number(req.body?.adjustAmount || 0);
     if (adjustAmount !== 0 && Number.isFinite(adjustAmount)) {
@@ -1124,6 +1559,25 @@ async function startServer() {
         createdAt: new Date().toISOString(),
       });
     }
+    logAdminAction(db, req.authUser!, 'Update User', `Updated profile/account for ${user.name} (#${user.id})`);
+    saveDatabase(db);
+    res.json({ ok: true, user: sanitizeUser(user) });
+  });
+
+  app.delete('/api/admin/users/:id', requireAdmin, (req: AuthedRequest, res) => {
+    const db = loadDatabase();
+    const uid = Number(req.params.id);
+    if (uid === req.authUser!.id) {
+      res.status(400).json({ error: 'You cannot delete your own active Admin account.' });
+      return;
+    }
+    const idx = db.users.findIndex((u) => u.id === uid);
+    if (idx === -1) {
+      res.status(404).json({ error: 'User not found.' });
+      return;
+    }
+    const [removed] = db.users.splice(idx, 1);
+    logAdminAction(db, req.authUser!, 'Delete User', `Removed account #${uid} (${removed.name})`);
     saveDatabase(db);
     res.json({ ok: true });
   });
@@ -1133,7 +1587,7 @@ async function startServer() {
     res.json({ gateways: db.gateways });
   });
 
-  app.post('/api/admin/gateways', requireAdmin, (req, res) => {
+  app.post('/api/admin/gateways', requireAdmin, (req: AuthedRequest, res) => {
     const db = loadDatabase();
     const name = String(req.body?.name || '').trim();
     if (!name) {
@@ -1153,11 +1607,12 @@ async function startServer() {
       color: String(req.body?.color || 'indigo'),
       active: true,
     });
+    logAdminAction(db, req.authUser!, 'Add Gateway', `Added payment gateway "${name}"`);
     saveDatabase(db);
     res.status(201).json({ ok: true });
   });
 
-  app.put('/api/admin/gateways/:id', requireAdmin, (req, res) => {
+  app.put('/api/admin/gateways/:id', requireAdmin, (req: AuthedRequest, res) => {
     const db = loadDatabase();
     const gw = db.gateways.find((g) => g.id === Number(req.params.id));
     if (!gw) {
@@ -1173,13 +1628,15 @@ async function startServer() {
     gw.feePercent = Number(req.body?.feePercent ?? gw.feePercent);
     gw.color = String(req.body?.color || gw.color);
     gw.active = Boolean(req.body?.active ?? gw.active);
+    logAdminAction(db, req.authUser!, 'Update Gateway', `Updated payment gateway "${gw.name}"`);
     saveDatabase(db);
     res.json({ ok: true });
   });
 
-  app.delete('/api/admin/gateways/:id', requireAdmin, (req, res) => {
+  app.delete('/api/admin/gateways/:id', requireAdmin, (req: AuthedRequest, res) => {
     const db = loadDatabase();
     db.gateways = db.gateways.filter((g) => g.id !== Number(req.params.id));
+    logAdminAction(db, req.authUser!, 'Delete Gateway', `Deleted gateway #${req.params.id}`);
     saveDatabase(db);
     res.json({ ok: true });
   });
@@ -1204,15 +1661,166 @@ async function startServer() {
     res.json({ ok: true });
   });
 
+  // Blog CMS Routes
+  app.get('/api/admin/blog', requireAdmin, (_req, res) => {
+    const db = loadDatabase();
+    res.json({ posts: [...db.blogPosts].sort((a, b) => b.id - a.id) });
+  });
+
+  app.post('/api/admin/blog', requireAdmin, (req: AuthedRequest, res) => {
+    const db = loadDatabase();
+    const title = String(req.body?.title || '').trim();
+    const content = String(req.body?.content || '').trim();
+    if (title.length < 3 || content.length < 10) {
+      res.status(400).json({ error: 'Blog title and content are required.' });
+      return;
+    }
+    const now = new Date().toISOString();
+    const slugBase = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'post';
+    const post = {
+      id: allocateId(db),
+      title,
+      slug: `${slugBase}-${Math.floor(Math.random() * 900 + 100)}`,
+      category: String(req.body?.category || 'Updates').trim() || 'Updates',
+      excerpt: String(req.body?.excerpt || content.slice(0, 140)).trim(),
+      content,
+      coverImageUrl: sanitizeUrl(req.body?.coverImageUrl) || '/src/assets/images/category_social_media_1795645722524.jpg',
+      authorName: String(req.body?.authorName || req.authUser!.name).trim(),
+      featured: Boolean(req.body?.featured),
+      published: req.body?.published !== undefined ? Boolean(req.body.published) : true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.blogPosts.unshift(post);
+    logAdminAction(db, req.authUser!, 'Create Blog Post', `Published/saved article "${post.title}"`);
+    saveDatabase(db);
+    res.status(201).json({ post });
+  });
+
+  app.put('/api/admin/blog/:id', requireAdmin, (req: AuthedRequest, res) => {
+    const db = loadDatabase();
+    const post = db.blogPosts.find((p) => p.id === Number(req.params.id));
+    if (!post) {
+      res.status(404).json({ error: 'Blog post not found.' });
+      return;
+    }
+    post.title = String(req.body?.title || post.title).trim();
+    post.category = String(req.body?.category ?? post.category).trim();
+    post.excerpt = String(req.body?.excerpt ?? post.excerpt).trim();
+    post.content = String(req.body?.content ?? post.content).trim();
+    if (req.body?.coverImageUrl !== undefined) {
+      post.coverImageUrl = sanitizeUrl(req.body.coverImageUrl) || post.coverImageUrl;
+    }
+    if (req.body?.authorName !== undefined) post.authorName = String(req.body.authorName).trim();
+    if (req.body?.featured !== undefined) post.featured = Boolean(req.body.featured);
+    if (req.body?.published !== undefined) post.published = Boolean(req.body.published);
+    post.updatedAt = new Date().toISOString();
+    logAdminAction(db, req.authUser!, 'Update Blog Post', `Updated article "${post.title}"`);
+    saveDatabase(db);
+    res.json({ post });
+  });
+
+  app.delete('/api/admin/blog/:id', requireAdmin, (req: AuthedRequest, res) => {
+    const db = loadDatabase();
+    db.blogPosts = db.blogPosts.filter((p) => p.id !== Number(req.params.id));
+    logAdminAction(db, req.authUser!, 'Delete Blog Post', `Deleted article #${req.params.id}`);
+    saveDatabase(db);
+    res.json({ ok: true });
+  });
+
+  // Custom Pages CMS Routes
+  app.get('/api/admin/pages', requireAdmin, (_req, res) => {
+    const db = loadDatabase();
+    res.json({ pages: db.pages });
+  });
+
+  app.post('/api/admin/pages', requireAdmin, (req: AuthedRequest, res) => {
+    const db = loadDatabase();
+    const title = String(req.body?.title || '').trim();
+    const content = String(req.body?.content || '').trim();
+    if (title.length < 2 || content.length < 5) {
+      res.status(400).json({ error: 'Page title and content are required.' });
+      return;
+    }
+    const rawSlug = String(req.body?.slug || title)
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-|-$/g, '');
+    const slug = rawSlug || `page-${Date.now()}`;
+    if (db.pages.some((p) => p.slug === slug)) {
+      res.status(409).json({ error: 'A page with this URL slug already exists.' });
+      return;
+    }
+    const page = {
+      id: allocateId(db),
+      title,
+      slug,
+      summary: String(req.body?.summary || '').trim(),
+      content,
+      showInHeader: Boolean(req.body?.showInHeader),
+      showInFooter: req.body?.showInFooter !== undefined ? Boolean(req.body.showInFooter) : true,
+      published: req.body?.published !== undefined ? Boolean(req.body.published) : true,
+      updatedAt: new Date().toISOString(),
+    };
+    db.pages.push(page);
+    logAdminAction(db, req.authUser!, 'Create CMS Page', `Created page /${page.slug}`);
+    saveDatabase(db);
+    res.status(201).json({ page });
+  });
+
+  app.put('/api/admin/pages/:id', requireAdmin, (req: AuthedRequest, res) => {
+    const db = loadDatabase();
+    const page = db.pages.find((p) => p.id === Number(req.params.id));
+    if (!page) {
+      res.status(404).json({ error: 'Page not found.' });
+      return;
+    }
+    page.title = String(req.body?.title || page.title).trim();
+    if (typeof req.body?.slug === 'string' && req.body.slug.trim()) {
+      const nextSlug = req.body.slug
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, '-')
+        .replace(/^-|-$/g, '');
+      if (nextSlug && !db.pages.some((p) => p.id !== page.id && p.slug === nextSlug)) {
+        page.slug = nextSlug;
+      }
+    }
+    page.summary = String(req.body?.summary ?? page.summary).trim();
+    page.content = String(req.body?.content ?? page.content).trim();
+    if (req.body?.showInHeader !== undefined) page.showInHeader = Boolean(req.body.showInHeader);
+    if (req.body?.showInFooter !== undefined) page.showInFooter = Boolean(req.body.showInFooter);
+    if (req.body?.published !== undefined) page.published = Boolean(req.body.published);
+    page.updatedAt = new Date().toISOString();
+    logAdminAction(db, req.authUser!, 'Update CMS Page', `Updated page "${page.title}"`);
+    saveDatabase(db);
+    res.json({ page });
+  });
+
+  app.delete('/api/admin/pages/:id', requireAdmin, (req: AuthedRequest, res) => {
+    const db = loadDatabase();
+    db.pages = db.pages.filter((p) => p.id !== Number(req.params.id));
+    logAdminAction(db, req.authUser!, 'Delete CMS Page', `Deleted page #${req.params.id}`);
+    saveDatabase(db);
+    res.json({ ok: true });
+  });
+
   app.get('/api/admin/settings', requireAdmin, (_req, res) => {
     const db = loadDatabase();
     res.json({ settings: db.settings });
   });
 
-  app.put('/api/admin/settings', requireAdmin, (req, res) => {
+  app.put('/api/admin/settings', requireAdmin, (req: AuthedRequest, res) => {
     const db = loadDatabase();
+    const validThemes = ['indigo', 'violet', 'emerald', 'rose', 'amber', 'sky'] as const;
+    const accentTheme = validThemes.includes(req.body?.accentTheme)
+      ? req.body.accentTheme
+      : db.settings.accentTheme;
+
     db.settings = {
       siteName: String(req.body?.siteName || db.settings.siteName).trim(),
+      tagline: String(req.body?.tagline ?? db.settings.tagline).trim(),
+      logoUrl: req.body?.logoUrl !== undefined ? sanitizeUrl(req.body.logoUrl) : db.settings.logoUrl,
+      accentTheme,
       currencySymbol: String(req.body?.currencySymbol || db.settings.currencySymbol).trim(),
       platformFeePercent: Math.max(0, Number(req.body?.platformFeePercent ?? db.settings.platformFeePercent)),
       referralCommissionPercent: Math.max(
@@ -1220,10 +1828,36 @@ async function startServer() {
         Number(req.body?.referralCommissionPercent ?? db.settings.referralCommissionPercent)
       ),
       minJobWorkers: Math.max(1, Math.floor(Number(req.body?.minJobWorkers ?? db.settings.minJobWorkers))),
+      minWithdrawAmount: Math.max(0.5, Number(req.body?.minWithdrawAmount ?? db.settings.minWithdrawAmount)),
       autoApproveJobs: Boolean(req.body?.autoApproveJobs ?? db.settings.autoApproveJobs),
+      allowRegistration:
+        req.body?.allowRegistration !== undefined ? Boolean(req.body.allowRegistration) : db.settings.allowRegistration,
+      maintenanceMode:
+        req.body?.maintenanceMode !== undefined ? Boolean(req.body.maintenanceMode) : db.settings.maintenanceMode,
+      maintenanceMessage: String(req.body?.maintenanceMessage ?? db.settings.maintenanceMessage).trim(),
       noticeBanner: String(req.body?.noticeBanner ?? db.settings.noticeBanner).trim(),
       supportEmail: String(req.body?.supportEmail ?? db.settings.supportEmail).trim(),
+      heroKicker: String(req.body?.heroKicker ?? db.settings.heroKicker).trim(),
+      heroTitle: String(req.body?.heroTitle ?? db.settings.heroTitle).trim(),
+      heroSubtitle: String(req.body?.heroSubtitle ?? db.settings.heroSubtitle).trim(),
+      heroPrimaryCta: String(req.body?.heroPrimaryCta ?? db.settings.heroPrimaryCta).trim(),
+      heroSecondaryCta: String(req.body?.heroSecondaryCta ?? db.settings.heroSecondaryCta).trim(),
+      heroImageUrl:
+        req.body?.heroImageUrl !== undefined
+          ? sanitizeUrl(req.body.heroImageUrl) || db.settings.heroImageUrl
+          : db.settings.heroImageUrl,
+      showStatsStrip:
+        req.body?.showStatsStrip !== undefined ? Boolean(req.body.showStatsStrip) : db.settings.showStatsStrip,
+      showHowItWorks:
+        req.body?.showHowItWorks !== undefined ? Boolean(req.body.showHowItWorks) : db.settings.showHowItWorks,
+      showBlogSection:
+        req.body?.showBlogSection !== undefined ? Boolean(req.body.showBlogSection) : db.settings.showBlogSection,
+      founderName: String(req.body?.founderName ?? db.settings.founderName).trim(),
+      founderRole: String(req.body?.founderRole ?? db.settings.founderRole).trim(),
+      founderQuote: String(req.body?.founderQuote ?? db.settings.founderQuote).trim(),
+      footerText: String(req.body?.footerText ?? db.settings.footerText).trim(),
     };
+    logAdminAction(db, req.authUser!, 'Update Website Settings', `Saved settings for ${db.settings.siteName}`);
     saveDatabase(db);
     res.json({ settings: db.settings });
   });
@@ -1245,7 +1879,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Viral Bolt server listening on http://localhost:${PORT}`);
+    console.log(`MiniWorkers server listening on http://localhost:${PORT}`);
   });
 }
 

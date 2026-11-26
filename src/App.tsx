@@ -59,13 +59,13 @@ export default function App() {
   if (loadError) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
-        <div className="max-w-md rounded-2xl border border-rose-200 bg-white p-6 text-center shadow-sm">
-          <h1 className="font-display text-lg font-bold text-slate-900">Unable to Load Marketplace</h1>
+        <div className="max-w-lg rounded-2xl border border-rose-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="font-display text-lg font-bold text-slate-900">Unable to Connect to Marketplace API</h1>
           <p className="mt-2 text-sm text-rose-600">{loadError}</p>
           <button
             type="button"
             onClick={refreshBootstrap}
-            className="mt-4 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white"
+            className="mt-4 rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-700"
           >
             Retry Connection
           </button>
@@ -78,8 +78,8 @@ export default function App() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
         <div className="space-y-3 text-center">
-          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
-          <p className="text-sm font-medium text-slate-600">Loading Viral Bolt Marketplace...</p>
+          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-teal-200 border-t-teal-600" />
+          <p className="text-sm font-medium text-slate-600">Loading MiniWorkers Marketplace...</p>
         </div>
       </div>
     );
@@ -127,6 +127,7 @@ export default function App() {
         <AuthModal
           initialTab={authModal.tab}
           initialReferralCode={refCodeFromUrl}
+          settings={bootstrap.settings}
           onClose={() => setAuthModal({ open: false, tab: 'login' })}
           onSuccess={handleAuthSuccess}
         />
