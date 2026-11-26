@@ -1,0 +1,6 @@
+{
+  "name": "MiniWorkers",
+  "description": "Colorful micro-job and freelance task marketplace with unified worker/employer dashboards, wallet deposits & withdrawals, referrals, support tickets, admin panel, and exportable PHP & MySQL cPanel deployment package.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

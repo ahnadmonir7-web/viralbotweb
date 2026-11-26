@@ -1,0 +1,24 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Forward Authorization header to PHP on cPanel CGI/FastCGI
+  RewriteCond %{HTTP:Authorization} .
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+  # Route all /api/* requests to /api/index.php
+  RewriteRule ^api/(.*)$ api/index.php [QSA,L]
+
+  # Serve existing static files directly (JS, CSS, images, uploaded proofs)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # SPA fallback for React routes
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# Block direct browsing of PHP config directory
+<FilesMatch "^database\.php$">
+  Require all denied
+</FilesMatch>
